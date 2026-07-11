@@ -1,198 +1,206 @@
-// Live API for the Good Steward site.
+// Good Steward — multi-user sandbox app server.
 //
-// Runs in one of two modes, chosen automatically:
-//   • "alpaca" — real Alpaca sandbox: round-up sweeps place REAL sandbox orders in a
-//                real brokerage account, and portfolio value is read from Alpaca.
-//   • "fake"   — no creds present: in-memory FakeBroker (for a zero-config demo).
+// Real accounts (email + password), client profiles, and per-user brokerage
+// accounts. When Alpaca creds are present, each user gets a REAL Alpaca SANDBOX
+// account created at onboarding and their round-ups place real sandbox orders in
+// it. Without creds, the whole app still works on a simulated broker.
 //
-// State (transactions, clearing balance, invested/pending totals) persists to a JSON
-// file so it survives restarts. Orders that can't be placed yet (funds still settling)
-// are queued and retried — the site keeps working through the sandbox ACH delay.
+// All money is sandbox / simulated — no real funds move.
 
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, normalize, extname, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Ledger } from "./lib/ledger.js";
+
+import * as db from "./lib/db.js";
+import { hashPassword, verifyPassword, newToken, sessionFromCookie, sessionCookie, validateCredentials } from "./lib/auth.js";
+import { alpacaEnabled, createBrokerageAccount, fundAccount } from "./lib/account-service.js";
+import { recordPurchase, retryPending, rebalance, summary } from "./lib/portfolio.js";
 import { FakeBroker, AlpacaBroker } from "./lib/broker.js";
 import { authFromEnv, makeRequester } from "./lib/alpaca-auth.js";
 import { generateMonth, randomPurchase } from "./lib/feed.js";
-import { fromCents, toCents } from "./lib/roundup.js";
-import { loadState, saveState } from "./lib/store.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8787;
-const ETF = "ESGV";
-const USER = "cole";
-const STATE_FILE = join(HERE, "data", "state.json");
 const DIST_DIR = join(HERE, "..", "dist");
-const MONTH_MS = 30 * 86_400_000;
 
-// ── Broker selection ────────────────────────────────────────────────────────
-let mode = "fake";
-let broker = new FakeBroker();
-let alpacaReq = null;          // requester for reading account/positions
-let accountId = null;
-try {
+// ── Broker wiring ─────────────────────────────────────────────────────────────
+const ALPACA = alpacaEnabled();
+const fakeBroker = new FakeBroker();
+let alpacaBroker = null, alpacaReq = null;
+if (ALPACA) {
   const { auth, baseUrl } = authFromEnv();
-  accountId = process.env.ALPACA_TEST_ACCOUNT_ID || null;
-  if (accountId) {
-    broker = new AlpacaBroker({ auth, baseUrl });
-    alpacaReq = makeRequester(auth, baseUrl);
-    mode = "alpaca";
-  }
-} catch {
-  /* no creds → stay in fake mode */
+  alpacaBroker = new AlpacaBroker({ auth, baseUrl });
+  alpacaReq = makeRequester(auth, baseUrl);
 }
+const usesAlpaca = (user) => ALPACA && !!user.alpacaAccountId;
+const brokerFor = (user) => (usesAlpaca(user) ? alpacaBroker : fakeBroker);
+const modeFor = (user) => (usesAlpaca(user) ? "alpaca" : "fake");
 
-// ── State ───────────────────────────────────────────────────────────────────
-const ledger = new Ledger({ thresholdCents: 500, roundTo: 100 });
-let transactions = [];
-let investedCents = 0;      // sum of ETF order notionals Alpaca ACCEPTED
-let pendingInvestCents = 0; // swept but not yet placed (funds settling)
-let orders = [];            // { id, notionalCents, status, ts }
-let alpacaSnapshot = null;  // { portfolioValueCents, cashCents, positionValueCents }
-
-// ── Core pipeline ─────────────────────────────────────────────────────────────
-// Try to place any queued investment. In fake mode this always succeeds; in alpaca
-// mode a "funds settling" 403 leaves it queued for the next retry.
-async function flushPending() {
-  if (pendingInvestCents <= 0) return;
-  const amount = pendingInvestCents;
-  try {
-    const order = await broker.invest(mode === "alpaca" ? accountId : USER, amount, ETF);
-    investedCents += amount;
-    pendingInvestCents -= amount;
-    orders.push({ id: order.id, notionalCents: amount, status: order.status ?? "accepted", ts: Date.now() });
-  } catch (err) {
-    if (!String(err.message).includes("insufficient buying power")) {
-      console.warn("order attempt failed:", err.message.split("\n")[0]);
-    }
-    // stays pending; retried later
-  }
-}
-
-// Feed a purchase through: round-up → clearing → maybe sweep → queue investment.
-async function ingest(p, { persist = true } = {}) {
-  const { spare, balance } = ledger.recordPurchase(USER, p.amountCents, { name: p.name });
-  const tx = { ...p, spare, balanceAfter: balance };
-  const swept = ledger.sweep(USER);
-  if (swept !== null) {
-    pendingInvestCents += swept;
-    tx.swept = swept;
-    await flushPending();
-    tx.invested = pendingInvestCents === 0; // did it clear immediately?
-  }
-  transactions.push(tx);
-  if (persist) persist_();
-  return tx;
-}
-
-function persist_() {
-  saveState(STATE_FILE, {
-    v: 1, transactions, investedCents, pendingInvestCents, orders,
-    clearing: ledger.balanceOf(USER),
-  });
-}
-
-// ── Alpaca snapshot (cached; refreshed on a timer) ───────────────────────────
-async function refreshSnapshot() {
-  if (mode !== "alpaca") return;
-  try {
-    const acct = await alpacaReq("GET", `/v1/trading/accounts/${accountId}/account`);
-    let positionValueCents = 0;
-    try {
-      const pos = await alpacaReq("GET", `/v1/trading/accounts/${accountId}/positions/${ETF}`);
-      positionValueCents = Math.round(Number(pos.market_value ?? 0) * 100);
-    } catch { /* no position yet */ }
-    alpacaSnapshot = {
-      portfolioValueCents: Math.round(Number(acct.portfolio_value ?? 0) * 100),
-      cashCents: Math.round(Number(acct.cash ?? 0) * 100),
-      buyingPowerCents: Math.round(Number(acct.buying_power ?? 0) * 100),
-      positionValueCents,
-    };
-  } catch (err) {
-    console.warn("snapshot refresh failed:", err.message.split("\n")[0]);
-  }
-}
-
-// ── Startup: restore or seed ─────────────────────────────────────────────────
-const saved = loadState(STATE_FILE);
-if (saved) {
-  transactions = saved.transactions ?? [];
-  investedCents = saved.investedCents ?? 0;
-  pendingInvestCents = saved.pendingInvestCents ?? 0;
-  orders = saved.orders ?? [];
-  if (saved.clearing) ledger.balances.set(USER, saved.clearing);
-  console.log(`Restored ${transactions.length} transactions from state.`);
-  await flushPending(); // funds may have settled since last run
-} else {
-  for (const p of generateMonth()) await ingest(p, { persist: false });
-  persist_();
-  console.log(`Seeded ${transactions.length} transactions.`);
-}
-await refreshSnapshot();
-
-// ── Summary for the frontend ─────────────────────────────────────────────────
-function summary() {
-  const monthStart = Date.now() - MONTH_MS;
-  const monthTx = transactions.filter((t) => t.ts >= monthStart);
-  const roundupsThisMonthCents = monthTx.reduce((s, t) => s + t.spare, 0);
-
-  const byCategory = {};
-  for (const t of monthTx) byCategory[t.category] = (byCategory[t.category] ?? 0) + t.spare;
-
-  // Portfolio value: prefer Alpaca's real market value once it exists; else what we invested.
-  const portfolioValueCents =
-    alpacaSnapshot && alpacaSnapshot.positionValueCents > 0
-      ? alpacaSnapshot.positionValueCents
-      : investedCents;
-
-  return {
-    mode, etf: ETF,
-    account: accountId ? accountId.slice(0, 8) + "…" : null,
-    investedCents, pendingInvestCents,
-    portfolioValueCents,
-    clearingBalanceCents: ledger.balanceOf(USER),
-    roundupsThisMonthCents,
-    ordersPlaced: orders.length,
-    thresholdCents: ledger.thresholdCents,
-    alpaca: alpacaSnapshot,
-    byCategory: Object.entries(byCategory)
-      .sort((a, b) => b[1] - a[1])
-      .map(([category, cents]) => ({ category, cents, display: fromCents(cents) })),
-    recent: transactions.slice(-8).reverse().map((t) => ({
-      name: t.name, category: t.category,
-      amount: fromCents(t.amountCents), spare: fromCents(t.spare),
-      ts: t.ts, swept: t.swept ? fromCents(t.swept) : null,
-    })),
-    display: {
-      portfolioValue: fromCents(portfolioValueCents),
-      invested: fromCents(investedCents),
-      pending: pendingInvestCents > 0 ? fromCents(pendingInvestCents) : null,
-      clearing: fromCents(ledger.balanceOf(USER)),
-      roundupsThisMonth: fromCents(roundupsThisMonthCents),
-    },
-  };
-}
-
-// ── HTTP ─────────────────────────────────────────────────────────────────────
-function send(res, code, body) {
-  res.writeHead(code, {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-  });
+// ── HTTP helpers ──────────────────────────────────────────────────────────────
+function sendJson(res, code, body, extraHeaders = {}) {
+  res.writeHead(code, { "Content-Type": "application/json", ...extraHeaders });
   res.end(JSON.stringify(body));
 }
+async function readBody(req) {
+  let raw = "";
+  for await (const chunk of req) raw += chunk;
+  try { return raw ? JSON.parse(raw) : {}; } catch { return null; }
+}
+function currentUser(req) {
+  const token = sessionFromCookie(req.headers.cookie);
+  const session = db.getSession(token);
+  return session ? db.getUser(session.userId) : null;
+}
+const publicUser = (u) => ({ id: u.id, email: u.email, hasProfile: !!u.profile, accountLinked: !!u.alpacaAccountId });
 
+// Live Alpaca position value for a user's account (best-effort, for portfolio value).
+async function snapshotFor(user) {
+  if (!usesAlpaca(user)) return null;
+  try {
+    const sym = user.config.holdings[0]?.symbol ?? "ESGV";
+    const acct = await alpacaReq("GET", `/v1/trading/accounts/${user.alpacaAccountId}/account`);
+    let positionValueCents = 0;
+    try {
+      const pos = await alpacaReq("GET", `/v1/trading/accounts/${user.alpacaAccountId}/positions/${sym}`);
+      positionValueCents = Math.round(Number(pos.market_value ?? 0) * 100);
+    } catch { /* no position yet */ }
+    return { portfolioValueCents: Math.round(Number(acct.portfolio_value ?? 0) * 100), positionValueCents };
+  } catch { return null; }
+}
+
+// Seed a little demo history so a new account isn't empty.
+async function seedDemo(user) {
+  for (const p of generateMonth(2, 12)) await recordPurchase(user, p, brokerFor(user));
+}
+
+// ── Routes ────────────────────────────────────────────────────────────────────
+const server = createServer(async (req, res) => {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const path = url.pathname;
+
+  // ---- health ----
+  if (req.method === "GET" && path === "/api/health") {
+    return sendJson(res, 200, { ok: true, alpaca: ALPACA, ...db.stats() });
+  }
+
+  // ---- signup ----
+  if (req.method === "POST" && path === "/api/signup") {
+    const body = await readBody(req);
+    if (!body) return sendJson(res, 400, { error: "invalid JSON" });
+    const err = validateCredentials(body.email, body.password);
+    if (err) return sendJson(res, 400, { error: err });
+    if (db.getUserByEmail(body.email)) return sendJson(res, 409, { error: "An account with that email already exists." });
+    const { salt, passHash } = hashPassword(body.password);
+    const user = db.createUser({ email: body.email, salt, passHash });
+    const token = newToken();
+    db.createSession(user.id, token);
+    return sendJson(res, 200, { user: publicUser(user) }, { "Set-Cookie": sessionCookie(token) });
+  }
+
+  // ---- login ----
+  if (req.method === "POST" && path === "/api/login") {
+    const body = await readBody(req);
+    if (!body) return sendJson(res, 400, { error: "invalid JSON" });
+    const user = db.getUserByEmail(body.email);
+    if (!user || !verifyPassword(body.password || "", user.salt, user.passHash)) {
+      return sendJson(res, 401, { error: "Wrong email or password." });
+    }
+    const token = newToken();
+    db.createSession(user.id, token);
+    return sendJson(res, 200, { user: publicUser(user) }, { "Set-Cookie": sessionCookie(token) });
+  }
+
+  // ---- logout ----
+  if (req.method === "POST" && path === "/api/logout") {
+    const token = sessionFromCookie(req.headers.cookie);
+    if (token) db.deleteSession(token);
+    return sendJson(res, 200, { ok: true }, { "Set-Cookie": sessionCookie("", { clear: true }) });
+  }
+
+  // ---- me ----
+  if (req.method === "GET" && path === "/api/me") {
+    const user = currentUser(req);
+    return user ? sendJson(res, 200, { user: publicUser(user) }) : sendJson(res, 401, { error: "not signed in" });
+  }
+
+  // ===== everything below requires a session =====
+  const authRoutes = ["/api/profile", "/api/portfolio", "/api/purchase", "/api/config"];
+  if (authRoutes.includes(path)) {
+    const user = currentUser(req);
+    if (!user) return sendJson(res, 401, { error: "not signed in" });
+
+    // ---- complete profile → create the real sandbox brokerage account ----
+    if (req.method === "POST" && path === "/api/profile") {
+      const body = await readBody(req);
+      if (!body) return sendJson(res, 400, { error: "invalid JSON" });
+      user.profile = { ...(user.profile || {}), ...(body.profile || {}) };
+      if (body.config) {
+        user.config = { ...user.config, ...body.config };
+        if (Array.isArray(body.config.holdings) && body.config.holdings.length) rebalance(user);
+      }
+      let accountStatus = null, accountError = null;
+      if (ALPACA && !user.alpacaAccountId) {
+        try {
+          const acct = await createBrokerageAccount(user.profile);
+          user.alpacaAccountId = acct.id;
+          accountStatus = acct.status;
+          fundAccount(acct.id).catch(() => {}); // best-effort, settles later
+        } catch (e) {
+          accountError = String(e.message).split("\n")[0];
+        }
+      }
+      if (user.transactions.length === 0) await seedDemo(user);
+      db.saveUser(user);
+      return sendJson(res, 200, {
+        account: user.alpacaAccountId ? { id: user.alpacaAccountId.slice(0, 8) + "…", status: accountStatus } : null,
+        accountError,
+        ...summary(user, { mode: modeFor(user), alpacaSnapshot: await snapshotFor(user) }),
+      });
+    }
+
+    // ---- portfolio ----
+    if (req.method === "GET" && path === "/api/portfolio") {
+      return sendJson(res, 200, summary(user, { mode: modeFor(user), alpacaSnapshot: await snapshotFor(user) }));
+    }
+
+    // ---- add a (simulated) purchase ----
+    if (req.method === "POST" && path === "/api/purchase") {
+      const body = await readBody(req);
+      const p = body && body.amount != null
+        ? { name: body.name ?? "Manual purchase", category: body.category ?? "Other", amountCents: Math.round(Number(body.amount) * 100), ts: Date.now() }
+        : randomPurchase();
+      await recordPurchase(user, p, brokerFor(user));
+      db.saveUser(user);
+      return sendJson(res, 200, summary(user, { mode: modeFor(user), alpacaSnapshot: await snapshotFor(user) }));
+    }
+
+    // ---- update config (framework / tithe / etc.) ----
+    if (req.method === "POST" && path === "/api/config") {
+      const body = await readBody(req);
+      if (!body) return sendJson(res, 400, { error: "invalid JSON" });
+      const prevHoldings = JSON.stringify(user.config.holdings);
+      user.config = { ...user.config, ...body };
+      if (Array.isArray(body.holdings) && body.holdings.length && JSON.stringify(user.config.holdings) !== prevHoldings) {
+        rebalance(user);
+      }
+      db.saveUser(user);
+      return sendJson(res, 200, summary(user, { mode: modeFor(user), alpacaSnapshot: await snapshotFor(user) }));
+    }
+  }
+
+  // ---- static frontend ----
+  if (path.startsWith("/api/")) return sendJson(res, 404, { error: "not found" });
+  if (req.method === "GET") return serveStatic(res, path);
+  sendJson(res, 404, { error: "not found" });
+});
+
+// ── Static file serving ───────────────────────────────────────────────────────
 const MIME = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css",
   ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".ico": "image/x-icon",
   ".json": "application/json", ".woff2": "font/woff2", ".map": "application/json",
 };
-
 async function serveStatic(res, pathname) {
   const rel = normalize(pathname).replace(/^(\.\.[/\\])+/, "");
   let filePath = join(DIST_DIR, rel);
@@ -213,47 +221,18 @@ async function serveStatic(res, pathname) {
   }
 }
 
-const server = createServer(async (req, res) => {
-  if (req.method === "OPTIONS") return send(res, 204, {});
-  const url = new URL(req.url, `http://localhost:${PORT}`);
-
-  if (req.method === "GET" && url.pathname === "/api/health") {
-    return send(res, 200, { ok: true, mode, uptime: Math.round(process.uptime()), transactions: transactions.length });
-  }
-  if (req.method === "GET" && url.pathname === "/api/portfolio") {
-    return send(res, 200, summary());
-  }
-  if (req.method === "POST" && url.pathname === "/api/purchase") {
-    let raw = "";
-    for await (const chunk of req) raw += chunk;
-    let p;
-    try {
-      const body = raw ? JSON.parse(raw) : {};
-      p = body.amount != null
-        ? { name: body.name ?? "Manual purchase", category: body.category ?? "Other",
-            amountCents: Math.round(Number(body.amount) * 100), ts: Date.now() }
-        : randomPurchase();
-    } catch {
-      return send(res, 400, { error: "invalid JSON" });
+// Background: retry queued investments for Alpaca users as funds settle.
+if (ALPACA) {
+  setInterval(async () => {
+    for (const user of db.allUsers()) {
+      if (!usesAlpaca(user) || user.pendingInvestCents <= 0) continue;
+      const before = user.pendingInvestCents;
+      await retryPending(user, brokerFor(user));
+      if (user.pendingInvestCents !== before) db.saveUser(user);
     }
-    const tx = await ingest(p);
-    return send(res, 200, { added: { name: tx.name, spare: fromCents(tx.spare) }, ...summary() });
-  }
-
-  if (url.pathname.startsWith("/api/")) return send(res, 404, { error: "not found" });
-  if (req.method === "GET") return serveStatic(res, url.pathname);
-  send(res, 404, { error: "not found" });
-});
-
-// Background: retry queued investments + refresh the Alpaca snapshot.
-if (mode === "alpaca") {
-  setInterval(async () => { await flushPending(); persist_(); await refreshSnapshot(); }, 30_000);
+  }, 60_000);
 }
 
 server.listen(PORT, () => {
-  const s = summary();
-  console.log(`Good Steward API on http://localhost:${PORT}  [mode: ${mode}${accountId ? " · acct " + s.account : ""}]`);
-  console.log(`  ${s.display.roundupsThisMonth} rounded up · ${s.display.invested} invested` +
-    (s.display.pending ? ` · ${s.display.pending} pending (funds settling)` : "") +
-    ` · ${s.display.clearing} in clearing`);
+  console.log(`Good Steward multi-user API on http://localhost:${PORT}  [alpaca: ${ALPACA ? "on" : "off (simulated)"}]`);
 });

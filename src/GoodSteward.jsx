@@ -67,6 +67,27 @@ const GROWTH = [
 
 const fmt = (n) => "$" + Math.round(n).toLocaleString("en-US");
 
+// Auth: current user (undefined = loading, null = signed out, object = signed in).
+function useAuth() {
+  const [user, setUser] = useState(undefined);
+  useEffect(() => {
+    fetch("/api/me").then(r => r.ok ? r.json() : null).then(d => setUser(d?.user ?? null)).catch(() => setUser(null));
+  }, []);
+  const call = (path, body) =>
+    fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
+      .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }));
+  const signup = async (email, password) => {
+    const { ok, data } = await call("/api/signup", { email, password });
+    if (ok) setUser(data.user); return { ok, error: data.error };
+  };
+  const login = async (email, password) => {
+    const { ok, data } = await call("/api/login", { email, password });
+    if (ok) setUser(data.user); return { ok, error: data.error };
+  };
+  const logout = async () => { await call("/api/logout"); setUser(null); };
+  return { user, setUser, signup, login, logout };
+}
+
 // Live round-up/ledger data from server/api.mjs (via Vite proxy). Falls back to
 // null while loading or if the API isn't running, so the UI degrades gracefully.
 function useLiveData() {
@@ -77,7 +98,10 @@ function useLiveData() {
   const addPurchase = () =>
     fetch("/api/purchase", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
       .then(r => r.ok ? r.json() : null).then(d => { if (d) setData(d); }).catch(() => {});
-  return { data, addPurchase };
+  const setConfig = (cfg) =>
+    fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cfg) })
+      .then(r => r.ok ? r.json() : null).then(d => { if (d) setData(d); }).catch(() => {});
+  return { data, addPurchase, setConfig };
 }
 
 export default function GoodSteward() {
@@ -92,11 +116,40 @@ export default function GoodSteward() {
   const [contribution, setContribution] = useState(500);
   const [roundups, setRoundups]         = useState(true);
   const [showRoundupsInfo, setShowRoundupsInfo] = useState(false);
-  const { data: live, addPurchase }     = useLiveData();
+  const [profile, setProfile]           = useState({ firstName:"", lastName:"", dob:"", address:"", city:"", state:"", postal:"" });
+  const [creating, setCreating]         = useState(false);
+  const { user, setUser, signup, login, logout } = useAuth();
+  const { data: live, addPurchase, setConfig } = useLiveData();
 
   const framework = frameworks[0];
   const fw = FRAMEWORKS[framework];
   const sc = SCREENS[screen];
+
+  // Drive the stage from auth: signed out → welcome; signed in without a profile →
+  // onboarding; fully set up → the app.
+  useEffect(() => {
+    if (user === undefined) return;
+    if (!user) setStage("welcome");
+    else if (!user.hasProfile) setStage("onboard");
+    else setStage("app");
+  }, [user]);
+
+  // Finish onboarding: send profile + chosen framework, create the sandbox account.
+  const openAccount = async () => {
+    setCreating(true);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profile,
+          config: { framework: fw.name, holdings: fw.holdings.map(h => ({ symbol: h.t, a: h.a })), tithePct: pct, contribution, screen },
+        }),
+      });
+      if (res.ok) setUser(u => ({ ...u, hasProfile: true })); // → stage effect moves to app
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const toggleFramework = (k) => {
     setFrameworks(prev =>
@@ -122,6 +175,33 @@ export default function GoodSteward() {
     return { excluded:avgExcl, similarity:avgSim, reduction, residual, annualDonation, harm, diversification, returns, redistribution, score, hasFaith, suggestedTithe };
   }, [frameworks, screen, basis, pct, sc]);
 
+  // Push the user's choices to the backend so round-ups actually buy the chosen
+  // framework's ETFs and the tithe/contribution feed real numbers.
+  useEffect(() => {
+    if (stage !== "app") return;
+    setConfig({
+      framework: fw.name,
+      holdings: fw.holdings.map(h => ({ symbol: h.t, a: h.a })),
+      tithePct: pct,
+      contribution,
+      screen,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, framework, screen, pct, contribution]);
+
+  /* ── LOADING (auth check in flight) ── */
+  if (user === undefined) return (
+    <Frame>
+      <FontInjector />
+      <div style={{ flex:1, display:"grid", placeItems:"center", background:C.pine }}>
+        <Scale size={30} color={C.brassSoft} strokeWidth={1.5} />
+      </div>
+    </Frame>
+  );
+
+  /* ── AUTH (sign up / log in) ── */
+  if (!user && stage === "auth") return <AuthScreen signup={signup} login={login} onBack={() => setStage("welcome")} />;
+
   /* ── WELCOME ── */
   if (stage === "welcome") return (
     <Frame>
@@ -140,7 +220,7 @@ export default function GoodSteward() {
           <p style={{ fontFamily:sans, fontSize:15, lineHeight:1.55, color:"#D9D2C2", marginTop:18, maxWidth:300 }}>Invest it to reduce foreseeable harm, accept that perfect purity is impossible, and redirect the residue toward human flourishing.</p>
         </div>
         <div style={{ position:"relative", zIndex:1 }}>
-          <Btn onClick={() => setStage("onboard")} dark>Begin <ChevronRight size={17} /></Btn>
+          <Btn onClick={() => setStage("auth")} dark>Begin <ChevronRight size={17} /></Btn>
           <p style={{ fontFamily:sans, fontSize:11.5, color:"#9FB3A4", textAlign:"center", marginTop:14 }}>No claim of moral purity. Ethical investing is asymptotic.</p>
         </div>
       </div>
@@ -149,7 +229,9 @@ export default function GoodSteward() {
 
   /* ── ONBOARDING ── */
   if (stage === "onboard") {
-    const steps = [renderRisk, renderFramework, renderScreen, renderTithe];
+    const steps = [renderRisk, renderFramework, renderScreen, renderTithe, renderProfile];
+    const last = steps.length - 1;
+    const profileOk = profile.firstName && profile.lastName && profile.dob;
     return (
       <Frame>
         <FontInjector />
@@ -157,15 +239,15 @@ export default function GoodSteward() {
           <div style={{ padding:"20px 22px 8px" }}>
             <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
               {step > 0 && <button onClick={() => setStep(step-1)} style={iconBtn}><ChevronLeft size={18} color={C.pine} /></button>}
-              <Dots n={4} active={step} />
+              <Dots n={steps.length} active={step} />
             </div>
           </div>
           <div style={{ flex:1, overflowY:"scroll", overflowX:"hidden", padding:"0 22px 20px", WebkitOverflowScrolling:"touch" }}>
             {steps[step]()}
           </div>
           <div style={{ padding:"12px 22px 24px", borderTop:`1px solid ${C.line}`, background:C.card }}>
-            <Btn onClick={() => step < 3 ? setStep(step+1) : setStage("app")}>
-              {step < 3 ? "Continue" : "Open my account"} <ChevronRight size={17} />
+            <Btn onClick={() => step < last ? setStep(step+1) : (profileOk && !creating && openAccount())}>
+              {creating ? "Opening account…" : step < last ? "Continue" : "Open my account"} <ChevronRight size={17} />
             </Btn>
           </div>
         </div>
@@ -331,26 +413,55 @@ export default function GoodSteward() {
     );
   }
 
+  function renderProfile() {
+    const set = (k) => (e) => setProfile(p => ({ ...p, [k]: e.target.value }));
+    return (
+      <div>
+        <Kicker>Step 5 · Your profile</Kicker>
+        <H2>Open your brokerage account</H2>
+        <P>We use this to open your account with our brokerage partner (Alpaca). This is a sandbox — it creates a real test account, no real money or identity.</P>
+        <div style={{ marginTop:18, display:"grid", gap:10 }}>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+            <ProfileInput label="First name" value={profile.firstName} onChange={set("firstName")} />
+            <ProfileInput label="Last name" value={profile.lastName} onChange={set("lastName")} />
+          </div>
+          <ProfileInput label="Date of birth" type="date" value={profile.dob} onChange={set("dob")} />
+          <ProfileInput label="Street address" value={profile.address} onChange={set("address")} placeholder="123 Main St" />
+          <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr", gap:10 }}>
+            <ProfileInput label="City" value={profile.city} onChange={set("city")} />
+            <ProfileInput label="State" value={profile.state} onChange={set("state")} placeholder="CA" />
+            <ProfileInput label="ZIP" value={profile.postal} onChange={set("postal")} placeholder="94105" />
+          </div>
+        </div>
+        <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, marginTop:14 }}>
+          By continuing you agree to the customer agreement. No real KYC or money is used in sandbox.
+        </p>
+      </div>
+    );
+  }
+
   /* ══ APP SCREENS ══ */
 
   function renderHome() {
     return (
       <div>
-        <Header title="Stewardship" sub="Good morning, Cole" />
+        <Header title="Stewardship" sub={`Good morning${profile.firstName ? ", " + profile.firstName : ""}`} />
         <div style={{ padding:"0 18px" }}>
           <div style={{ background:`linear-gradient(155deg, ${C.pine} 0%, #16302479 60%, #14271F 100%)`, borderRadius:22, padding:"22px 22px 6px", color:"#F3EEE2", position:"relative", overflow:"hidden" }}>
             <Grain />
             <div style={{ position:"relative", zIndex:1 }}>
               <span style={{ fontFamily:sans, fontSize:12, letterSpacing:"0.14em", textTransform:"uppercase", color:C.brassSoft }}>Portfolio value</span>
-              <div style={{ fontFamily:serif, fontSize:40, fontWeight:500, marginTop:4, letterSpacing:"-0.01em" }}>{fmt(14820)}</div>
+              <div style={{ fontFamily:serif, fontSize:40, fontWeight:500, marginTop:4, letterSpacing:"-0.01em" }}>{live ? live.display.portfolioValue : fmt(14820)}</div>
               <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:2 }}>
                 <TrendingUp size={15} color={C.brassSoft} />
-                <span style={{ fontFamily:sans, fontSize:13.5, color:"#CFE0D2" }}>+{fmt(1180)} (8.7%) this year</span>
+                <span style={{ fontFamily:sans, fontSize:13.5, color:"#CFE0D2" }}>
+                  {live ? `${live.display.roundupsThisMonth} rounded up this month` : `+${fmt(1180)} (8.7%) this year`}
+                </span>
               </div>
             </div>
             <div style={{ height:86, marginTop:8, marginLeft:-8, marginRight:-8 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={GROWTH} margin={{ top:6, right:6, bottom:0, left:6 }}>
+                <AreaChart data={live && live.growth && live.growth.length > 1 ? live.growth : GROWTH} margin={{ top:6, right:6, bottom:0, left:6 }}>
                   <defs>
                     <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={C.brassSoft} stopOpacity={0.45} />
@@ -438,20 +549,25 @@ export default function GoodSteward() {
           <Card>
             <Row icon={Wallet} label="Holdings" right={<InfoTag>{derived.similarity}% market</InfoTag>} />
             <div style={{ marginTop:10, display:"grid", gap:12 }}>
-              {fw.holdings.map(h => (
+              {fw.holdings.map(h => {
+                const liveH = live && live.holdings ? live.holdings.find(x => x.symbol === h.t) : null;
+                return (
                 <div key={h.t}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
                     <div>
                       <span style={{ fontFamily:sans, fontWeight:700, fontSize:13.5, color:C.ink }}>{h.t}</span>
                       <span style={{ fontFamily:sans, fontSize:12.5, color:C.muted, marginLeft:8 }}>{h.n}</span>
                     </div>
-                    <span style={{ fontFamily:sans, fontSize:13, fontWeight:600, color:C.pine }}>{h.a}%</span>
+                    <div style={{ textAlign:"right" }}>
+                      {liveH && <span style={{ fontFamily:sans, fontSize:13, fontWeight:600, color:C.pine }}>{liveH.investedDisplay}</span>}
+                      <span style={{ fontFamily:sans, fontSize:12, color:C.muted, marginLeft:liveH?8:0 }}>{h.a}%</span>
+                    </div>
                   </div>
                   <div style={{ height:6, background:C.line, borderRadius:6, marginTop:5, overflow:"hidden" }}>
                     <div style={{ width:`${h.a}%`, height:"100%", background:C.pineSoft, borderRadius:6 }} />
                   </div>
                 </div>
-              ))}
+              );})}
             </div>
           </Card>
 
@@ -488,7 +604,8 @@ export default function GoodSteward() {
   }
 
   function renderImpact() {
-    const split = derived.annualDonation / CAUSES.length;
+    const annualDonation = live ? live.annualDonationCents / 100 : derived.annualDonation;
+    const split = annualDonation / CAUSES.length;
     return (
       <div>
         <Header title="Impact" sub="Where the residue goes" />
@@ -498,7 +615,7 @@ export default function GoodSteward() {
             <input type="range" min={0} max={10} step={0.5} value={pct} onChange={e => setPct(+e.target.value)} style={{ width:"100%", accentColor:C.pine, marginTop:12 }} />
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginTop:4 }}>
               <span style={{ fontFamily:serif, fontSize:30, color:C.pine, fontWeight:600 }}>{pct}%</span>
-              <span style={{ fontFamily:sans, fontSize:13, color:C.muted }}>≈ {fmt(derived.annualDonation)}/yr</span>
+              <span style={{ fontFamily:sans, fontSize:13, color:C.muted }}>≈ {fmt(annualDonation)}/yr</span>
             </div>
             <div style={{ display:"flex", gap:8, marginTop:12, flexWrap:"wrap" }}>
               {Object.entries(OFFSET_BASIS).map(([k,v]) => (
@@ -580,10 +697,12 @@ export default function GoodSteward() {
   }
 
   function renderReport() {
+    const annualDonation = live ? live.annualDonationCents / 100 : derived.annualDonation;
     const rows = [
-      ["Savings added",      fmt(contribution * 12),             false],
-      ["Investment gain",    "+"+fmt(298),                       false],
-      ["Donations routed",   fmt(derived.annualDonation / 12),   true ],
+      ["Invested to date",   live ? live.display.invested : fmt(contribution * 12), true ],
+      ["Rounded up this month", live ? live.display.roundupsThisMonth : "+"+fmt(298), false],
+      ["In clearing account", live ? live.display.clearing : fmt(0),  false],
+      ["Donations routed",   fmt(annualDonation / 12),           true ],
       ["Companies screened", String(derived.excluded),           false],
       ["Direct harm reduced",SCREENS[screen].label+" · "+derived.reduction+"%", false],
       ["Stewardship Score",  String(derived.score),              true ],
@@ -612,6 +731,10 @@ export default function GoodSteward() {
               "Stewardship: minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."
           </p>
           </Card>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:16, padding:"0 4px" }}>
+            <span style={{ fontFamily:sans, fontSize:12, color:C.muted }}>{user?.email}</span>
+            <button onClick={logout} style={{ ...textLink, color:"#B0563F" }}>Sign out</button>
+          </div>
           <div style={{ height:14 }} />
         </div>
       </div>
@@ -620,6 +743,58 @@ export default function GoodSteward() {
 }
 
 /* ── SHARED COMPONENTS ── */
+
+function ProfileInput({ label, value, onChange, type = "text", placeholder }) {
+  return (
+    <label style={{ display:"block" }}>
+      <div style={{ fontFamily:sans, fontSize:11.5, color:C.muted, marginBottom:4 }}>{label}</div>
+      <input type={type} value={value} onChange={onChange} placeholder={placeholder}
+        style={{ width:"100%", fontFamily:sans, fontSize:14, color:C.ink, background:C.card, border:`1px solid ${C.line}`, borderRadius:10, padding:"11px 12px", outline:"none" }} />
+    </label>
+  );
+}
+
+function AuthScreen({ signup, login, onBack }) {
+  const [mode, setMode] = useState("signup");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true); setError("");
+    const { ok, error } = await (mode === "signup" ? signup : login)(email.trim(), password);
+    if (!ok) { setError(error || "Something went wrong."); setBusy(false); }
+    // on success the auth state updates and the app re-routes automatically
+  };
+  return (
+    <Frame>
+      <FontInjector />
+      <div style={{ flex:1, display:"flex", flexDirection:"column", background:C.bg, padding:"26px 26px 30px" }}>
+        <button onClick={onBack} style={{ ...iconBtn, alignSelf:"flex-start" }}><ChevronLeft size={18} color={C.pine} /></button>
+        <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center", gap:14 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+            <Scale size={22} color={C.brass} strokeWidth={1.6} />
+            <span style={{ fontFamily:sans, letterSpacing:"0.2em", fontSize:11, textTransform:"uppercase", color:C.brass }}>Good Steward</span>
+          </div>
+          <h1 style={{ fontFamily:serif, fontSize:30, fontWeight:500, color:C.pine, margin:0, letterSpacing:"-0.01em" }}>
+            {mode === "signup" ? "Create your account" : "Welcome back"}
+          </h1>
+          <div style={{ display:"grid", gap:10, marginTop:4 }}>
+            <ProfileInput label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
+            <ProfileInput label="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" />
+          </div>
+          {error && <div style={{ fontFamily:sans, fontSize:12.5, color:"#B0563F", background:"#B0563F14", padding:"9px 12px", borderRadius:10 }}>{error}</div>}
+          <Btn onClick={submit}>{busy ? "…" : mode === "signup" ? "Create account" : "Sign in"} <ChevronRight size={17} /></Btn>
+          <button onClick={() => { setMode(mode === "signup" ? "login" : "signup"); setError(""); }}
+            style={{ ...textLink, justifyContent:"center", alignSelf:"center" }}>
+            {mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account"}
+          </button>
+        </div>
+      </div>
+    </Frame>
+  );
+}
 
 function Frame({ children }) {
   return (
