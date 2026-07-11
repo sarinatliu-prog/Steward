@@ -3,17 +3,18 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
+    "api": "node --env-file-if-exists=server/.env server/api.mjs",
     "build": "vite build",
     "start": "node --env-file-if-exists=server/.env server/api.mjs",
     "serve": "npm run build && npm start",
     "test": "node server/test/engine.test.mjs",
     "lint": "oxlint",
     "preview": "vite preview"
-  },
-  "engines": {
-    "node": ">=22"
   },
   "dependencies": {
     "lucide-react": "^1.23.0",

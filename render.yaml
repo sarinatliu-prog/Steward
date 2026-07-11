@@ -1,6 +1,9 @@
-# Render Blueprint — deploys Good Steward as a single web service that serves
-# both the /api routes and the built frontend. Import this repo at
-# https://dashboard.render.com/blueprints and Render reads this file.
+# Render Blueprint — deploys Good Steward as a single web service that serves both
+# the /api routes and the built frontend. Import this repo at
+# https://dashboard.render.com/blueprints and Render reads this file automatically.
+#
+# Render sets $PORT; server/api.mjs honours it.
+
 services:
   - type: web
     name: good-steward
@@ -11,15 +14,28 @@ services:
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
-      # Set these in the Render dashboard (Environment tab). sync:false keeps the
-      # real values OUT of git — you paste them once into Render.
+      - key: NODE_VERSION
+        value: "22"
+
+      # Broker mode:
+      #   fake   = in-memory, no keys, nothing can reach a real market. Safe default
+      #            for a public demo — the app behaves identically.
+      #   alpaca = real Alpaca SANDBOX orders (still fake money, no real market).
+      - key: BROKER
+        value: fake
+
+      # Only needed if BROKER=alpaca. sync:false keeps the real values OUT of git —
+      # you paste them once into Render's Environment tab (encrypted at rest).
       - key: ALPACA_CLIENT_ID
         sync: false
       - key: ALPACA_CLIENT_SECRET
         sync: false
+      - key: ALPACA_TEST_ACCOUNT_ID
+        sync: false
+
+      # Sandbox hosts. Changing these to the live hosts would require the legal work
+      # described in GOING_LIVE.md — do not do it casually.
       - key: ALPACA_AUTH_URL
         value: https://authx.sandbox.alpaca.markets
       - key: ALPACA_BASE_URL
         value: https://broker-api.sandbox.alpaca.markets
-      - key: ALPACA_TEST_ACCOUNT_ID
-        sync: false
