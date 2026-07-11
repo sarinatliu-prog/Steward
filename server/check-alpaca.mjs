@@ -1,39 +1,67 @@
-// Quick connectivity check for the Alpaca Broker API sandbox.
+// Connectivity check for the Alpaca Broker API sandbox, using the CLIENT CREDENTIALS
+// (OAuth2) flow that Alpaca's Broker dashboard now issues credentials for.
+//
 // Run from the server/ folder with:  node --env-file=.env check-alpaca.mjs
-// It never prints your keys — only whether auth succeeded.
+// It never prints your secret — only whether auth succeeded.
+//
+// Step 1: exchange client id + secret for an access token at authx.sandbox.alpaca.markets
+// Step 2: call the Broker API with `Authorization: Bearer <token>`
+//
+// (The old Basic-auth "legacy" flow returns 401 for these credentials. That was the bug.)
 
-const KEY = process.env.ALPACA_API_KEY_ID;
-const SECRET = process.env.ALPACA_API_SECRET_KEY;
-const BASE = process.env.ALPACA_BASE_URL ?? "https://broker-api.sandbox.alpaca.markets";
+import { authFromEnv, makeRequester } from "./lib/alpaca-auth.js";
 
-if (!KEY || !SECRET || KEY.startsWith("your_")) {
-  console.error("✗ No credentials found. Copy .env.example to .env and fill in your sandbox keys.");
+let ctx;
+try {
+  ctx = authFromEnv();
+} catch (err) {
+  console.error("✗ " + err.message);
   process.exit(1);
 }
 
-const auth = "Basic " + Buffer.from(`${KEY}:${SECRET}`).toString("base64");
+const { auth, baseUrl, authUrl, clientId } = ctx;
 
+console.log("Checking Alpaca Broker sandbox (client-credentials flow)...");
+console.log(`  Auth host: ${authUrl}`);
+console.log(`  Broker API: ${baseUrl}`);
+console.log(`  Client ID: ${clientId.slice(0, 4)}…${clientId.slice(-3)} (${clientId.length} chars)`);
+console.log("");
+
+// ── Step 1: get an access token ────────────────────────────────────────────
+let token;
 try {
-  // Broker API: list brokerage accounts under your firm (empty is fine — proves auth works).
-  const res = await fetch(`${BASE}/v1/accounts`, {
-    headers: { Authorization: auth, Accept: "application/json" },
-  });
-
-  if (res.status === 401 || res.status === 403) {
-    console.error(`✗ Auth rejected (${res.status}). Double-check the key/secret and that they're SANDBOX Broker keys.`);
-    process.exit(1);
-  }
-  if (!res.ok) {
-    console.error(`✗ Unexpected response ${res.status}: ${await res.text()}`);
-    process.exit(1);
-  }
-
-  const accounts = await res.json();
-  console.log("✓ Connected to Alpaca Broker sandbox.");
-  console.log(`  Base URL: ${BASE}`);
-  console.log(`  Existing brokerage accounts: ${Array.isArray(accounts) ? accounts.length : "unknown"}`);
-  console.log("  Auth works — keys are valid. Ready to build.");
+  console.log("1/2  Requesting an access token…");
+  token = await auth.token();
+  console.log(`     ✓ Got a token (${token.length} chars), valid ~15 min.`);
 } catch (err) {
-  console.error("✗ Network/other error:", err.message);
+  console.error("     ✗ Token request FAILED.\n");
+  console.error("  " + err.message + "\n");
+  console.error("  What this means:");
+  console.error("   • 401/invalid_client → the client id or secret is wrong. The secret is");
+  console.error("     shown only ONCE when you generate the key. If you don't have it,");
+  console.error("     generate a NEW key in the Broker dashboard and copy both values.");
+  console.error("   • Make sure the dashboard is on SANDBOX and ALPACA_AUTH_URL is");
+  console.error("     https://authx.sandbox.alpaca.markets");
+  process.exit(1);
+}
+
+// ── Step 2: use the token against the Broker API ───────────────────────────
+try {
+  console.log("2/2  Calling GET /v1/accounts with the token…");
+  const req = makeRequester(auth, baseUrl);
+  const accounts = await req("GET", "/v1/accounts");
+
+  console.log("");
+  console.log("✓ Connected to Alpaca Broker sandbox.");
+  console.log(`  Existing brokerage accounts: ${Array.isArray(accounts) ? accounts.length : "unknown"}`);
+  console.log("  Auth works — the blocker is cleared. 🎉");
+  console.log("");
+  console.log("  Next: node --env-file=.env alpaca-create-account.mjs");
+} catch (err) {
+  console.error("     ✗ The token was issued but the API call was rejected.\n");
+  console.error("  " + err.message + "\n");
+  console.error("  If this is a 403, your key may lack permissions for this scope.");
+  console.error("  Check the key's Access Control in the Broker dashboard (needs Full,");
+  console.error("  or at least read access to the Accounts scope).");
   process.exit(1);
 }
