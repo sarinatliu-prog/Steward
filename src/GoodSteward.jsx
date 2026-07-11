@@ -365,6 +365,26 @@ export default function GoodSteward() {
             </div>
           </div>
 
+          {live && (
+            <Card>
+              <Row icon={Wallet} label={`Live · Alpaca ${live.mode === "alpaca" ? "sandbox" : "demo"}`} right={
+                <InfoTag>{live.mode === "alpaca" ? "real account" : "simulated"}</InfoTag>
+              } />
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:12 }}>
+                <LiveStat label={`Invested · ${live.etf}`} value={live.display.invested} />
+                <LiveStat label="In clearing" value={live.display.clearing} />
+                <LiveStat label="Rounded up (mo)" value={live.display.roundupsThisMonth} />
+                <LiveStat label={live.display.pending ? "Pending (settling)" : "Orders placed"}
+                          value={live.display.pending ?? String(live.ordersPlaced)} />
+              </div>
+              {live.display.pending && (
+                <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, margin:"10px 0 0" }}>
+                  {live.display.pending} of round-ups is queued to invest — Alpaca's sandbox bank transfer is still settling. It auto-invests the moment funds land.
+                </p>
+              )}
+            </Card>
+          )}
+
           <Card>
             <Row icon={Globe} label="Market tracking" />
             <p style={{ fontFamily:sans, fontSize:14, color:C.ink, lineHeight:1.5, margin:"8px 0 0" }}>
@@ -666,6 +686,7 @@ function Kicker({ children }) { return <div style={{ fontFamily:sans, fontSize:1
 function H2({ children })     { return <h2 style={{ fontFamily:serif, fontSize:26, fontWeight:500, color:C.pine, margin:"8px 0 0", lineHeight:1.12, letterSpacing:"-0.01em" }}>{children}</h2>; }
 function P({ children })      { return <p style={{ fontFamily:sans, fontSize:14, color:C.muted, lineHeight:1.5, margin:"8px 0 0" }}>{children}</p>; }
 function InfoTag({ children }) { return <span style={{ fontFamily:sans, fontSize:10.5, letterSpacing:"0.08em", textTransform:"uppercase", color:C.brass, background:C.brass+"1A", padding:"3px 8px", borderRadius:20, fontWeight:700 }}>{children}</span>; }
+function LiveStat({ label, value }) { return <div style={{ background:C.bg, border:`1px solid ${C.line}`, borderRadius:12, padding:"11px 13px" }}><div style={{ fontFamily:sans, fontSize:11, color:C.muted }}>{label}</div><div style={{ fontFamily:serif, fontSize:20, fontWeight:600, color:C.pine, marginTop:2 }}>{value}</div></div>; }
 
 const rowCard  = { display:"flex", alignItems:"center", gap:13, width:"100%", padding:"14px 15px", borderRadius:14, border:`1px solid ${C.line}`, background:C.card, cursor:"pointer" };
 const miniCard = { padding:"13px 12px", borderRadius:12, border:`1px solid ${C.line}`, background:C.card, cursor:"pointer", textAlign:"left" };
