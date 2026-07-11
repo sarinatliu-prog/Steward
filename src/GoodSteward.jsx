@@ -92,16 +92,22 @@ function useAuth() {
 // null while loading or if the API isn't running, so the UI degrades gracefully.
 function useLiveData() {
   const [data, setData] = useState(null);
+  const [buying, setBuying] = useState(false);
   const refresh = () =>
     fetch("/api/portfolio").then(r => r.ok ? r.json() : null).then(setData).catch(() => {});
   useEffect(() => { refresh(); const id = setInterval(refresh, 5000); return () => clearInterval(id); }, []);
-  const addPurchase = () =>
-    fetch("/api/purchase", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
-      .then(r => r.ok ? r.json() : null).then(d => { if (d) setData(d); }).catch(() => {});
+  // `buying` gives the button immediate feedback — placing a real Alpaca order is a
+  // network round-trip, and without it the tap feels broken.
+  const addPurchase = () => {
+    setBuying(true);
+    return fetch("/api/purchase", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(r => r.ok ? r.json() : null).then(d => { if (d) setData(d); }).catch(() => {})
+      .finally(() => setBuying(false));
+  };
   const setConfig = (cfg) =>
     fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cfg) })
       .then(r => r.ok ? r.json() : null).then(d => { if (d) setData(d); }).catch(() => {});
-  return { data, addPurchase, setConfig };
+  return { data, addPurchase, setConfig, buying };
 }
 
 export default function GoodSteward() {
@@ -119,7 +125,7 @@ export default function GoodSteward() {
   const [profile, setProfile]           = useState({ firstName:"", lastName:"", dob:"", address:"", city:"", state:"", postal:"" });
   const [creating, setCreating]         = useState(false);
   const { user, setUser, signup, login, logout } = useAuth();
-  const { data: live, addPurchase, setConfig } = useLiveData();
+  const { data: live, addPurchase, setConfig, buying } = useLiveData();
 
   const framework = frameworks[0];
   const fw = FRAMEWORKS[framework];
@@ -493,6 +499,28 @@ export default function GoodSteward() {
                   {live.display.pending} of round-ups is queued to invest — Alpaca's sandbox bank transfer is still settling. It auto-invests the moment funds land.
                 </p>
               )}
+
+              {/* The core interaction of the whole product: spend money → spare change
+                  rounds up → sweeps at $5 → buys your framework's ETFs. This used to be a
+                  small text link buried in the Impact tab, which meant nobody ever found
+                  the one button that demonstrates what Steward actually does. */}
+              <button
+                onClick={addPurchase}
+                disabled={buying}
+                style={{
+                  width: "100%", marginTop: 14, padding: "13px 16px",
+                  background: buying ? C.stone : C.pine, color: "#fff",
+                  border: "none", borderRadius: 12, cursor: buying ? "default" : "pointer",
+                  fontFamily: sans, fontSize: 14.5, fontWeight: 600,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                }}
+              >
+                {buying ? "Rounding up…" : <>Make a purchase <ChevronRight size={16} /></>}
+              </button>
+              <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.45, margin:"8px 0 0", textAlign:"center" }}>
+                Simulates a card purchase. Spare change rounds up, and every $5 buys your
+                {live.mode === "alpaca" ? " ETFs for real in the Alpaca sandbox." : " ETFs (simulated broker)."}
+              </p>
             </Card>
           )}
 
