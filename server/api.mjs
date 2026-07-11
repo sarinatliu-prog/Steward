@@ -139,13 +139,20 @@ const server = createServer(async (req, res) => {
         user.config = { ...user.config, ...body.config };
         if (Array.isArray(body.config.holdings) && body.config.holdings.length) rebalance(user);
       }
-      let accountStatus = null, accountError = null;
+      let accountStatus = null, accountError = null, funding = null;
       if (ALPACA && !user.alpacaAccountId) {
         try {
           const acct = await createBrokerageAccount(user.profile);
           user.alpacaAccountId = acct.id;
           accountStatus = acct.status;
-          fundAccount(acct.id).catch(() => {}); // best-effort, settles later
+          // Await funding: a journal is instant, so the user's very first round-up
+          // can place a real order immediately instead of bouncing off
+          // "insufficient buying power" for the next half hour.
+          try {
+            funding = await fundAccount(acct.id);
+          } catch (e) {
+            funding = { method: "none", error: String(e.message).split("\n")[0] };
+          }
         } catch (e) {
           accountError = String(e.message).split("\n")[0];
         }
@@ -155,6 +162,7 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 200, {
         account: user.alpacaAccountId ? { id: user.alpacaAccountId.slice(0, 8) + "…", status: accountStatus } : null,
         accountError,
+        funding, // { method: "journal" | "ach", status } — journal is instant, ach takes 10–30 min
         ...summary(user, { mode: modeFor(user), alpacaSnapshot: await snapshotFor(user) }),
       });
     }
@@ -233,6 +241,22 @@ if (ALPACA) {
   }, 60_000);
 }
 
+// Flush the last few seconds of state on shutdown (Render sends SIGTERM on deploy).
+for (const sig of ["SIGTERM", "SIGINT"]) {
+  process.on(sig, async () => {
+    try { await db.closeDb(); } catch { /* best effort */ }
+    process.exit(0);
+  });
+}
+
+// Load persisted state BEFORE serving, so a restart doesn't look like data loss.
+const dbInfo = await db.initDb();
+
 server.listen(PORT, () => {
-  console.log(`Good Steward multi-user API on http://localhost:${PORT}  [alpaca: ${ALPACA ? "on" : "off (simulated)"}]`);
+  console.log(`Good Steward on http://localhost:${PORT}`);
+  console.log(`  alpaca: ${ALPACA ? "on (sandbox)" : "off (simulated)"}`);
+  console.log(`  db:     ${dbInfo.backend} · ${dbInfo.users} users`);
+  if (!process.env.DATABASE_URL) {
+    console.log("  ⚠ no DATABASE_URL — state is a local file and will NOT survive a redeploy.");
+  }
 });

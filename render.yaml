@@ -1,6 +1,15 @@
-# Render Blueprint — deploys Good Steward as a single web service that serves
-# both the /api routes and the built frontend. Import this repo at
-# https://dashboard.render.com/blueprints and Render reads this file.
+# Render Blueprint — deploys Good Steward as a single web service that serves both
+# the /api routes and the built frontend, plus a Postgres database for durable state.
+# Import this repo at https://dashboard.render.com/blueprints and Render reads this file.
+
+databases:
+  # Without this, state lives in a JSON file on Render's EPHEMERAL disk — which is
+  # wiped on every deploy AND every wake-from-sleep on the free plan. That would
+  # silently destroy users, portfolios, and their Alpaca account links.
+  - name: steward-db
+    databaseName: steward
+    plan: free
+
 services:
   - type: web
     name: good-steward
@@ -11,15 +20,35 @@ services:
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
-      # Set these in the Render dashboard (Environment tab). sync:false keeps the
-      # real values OUT of git — you paste them once into Render.
+      # Wired automatically from the database above — no manual copy/paste.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: steward-db
+          property: connectionString
+
+      # ── Alpaca sandbox credentials ──────────────────────────────────────────
+      # sync:false keeps real values OUT of git — paste them once into Render's
+      # Environment tab (encrypted at rest).
       - key: ALPACA_CLIENT_ID
         sync: false
       - key: ALPACA_CLIENT_SECRET
         sync: false
+
+      # The pre-funded $50k sandbox firm/sweep account we journal cash from, so a new
+      # user is funded INSTANTLY instead of waiting 10–30 min for simulated ACH.
+      # Find it: node --env-file=server/.env server/alpaca-find-firm.mjs
+      # (or the "Firm Balance" tab in the Broker dashboard)
+      - key: ALPACA_FIRM_ACCOUNT_ID
+        sync: false
+
+      # Per-user onboarding credit. Kept low because JNLC journals have a daily cap
+      # (~$1,000/day across all users by default) — $100 covers plenty of $5 sweeps.
+      - key: ALPACA_FUND_AMOUNT
+        value: "100"
+
+      # Sandbox hosts. Pointing these at the live hosts would require the legal work
+      # in GO-LIVE.md — do not change them casually.
       - key: ALPACA_AUTH_URL
         value: https://authx.sandbox.alpaca.markets
       - key: ALPACA_BASE_URL
         value: https://broker-api.sandbox.alpaca.markets
-      - key: ALPACA_TEST_ACCOUNT_ID
-        sync: false

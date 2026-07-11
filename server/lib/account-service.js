@@ -58,8 +58,66 @@ export async function createBrokerageAccount(profile) {
   return { id: account.id, accountNumber: account.account_number, status: account.status };
 }
 
-// Kick off virtual ACH funding so the account gets buying power (settles on a delay).
-export async function fundAccount(accountId, amount = 1000) {
+// ── Funding ───────────────────────────────────────────────────────────────────
+//
+// Two ways to give a new sandbox account buying power:
+//
+//   1. JOURNAL (JNLC) from the firm/sweep account — INSTANT. Every sandbox partner
+//      gets a firm account pre-funded with $50k. This is also how real apps do
+//      "instant funding" (cash pooling), so it's not a demo hack.
+//   2. ACH transfer — realistic, but sandbox simulates the bank delay, so the cash
+//      takes 10–30 MINUTES to settle. Until then every order is rejected with
+//      "insufficient buying power" and nothing shows up in Alpaca.
+//
+// We try the journal first and fall back to ACH. That's the difference between a
+// user's first round-up landing a real order in seconds vs. half an hour.
+//
+// Note: JNLC has a daily limit (default ~$1,000/day across ALL journals), so we
+// fund a modest $100 per user — plenty for $5 round-up sweeps, and it lets ~10
+// users onboard per day. Raise ALPACA_FUND_AMOUNT at your own risk.
+
+const FUND_AMOUNT = Number(process.env.ALPACA_FUND_AMOUNT ?? 100);
+
+let firmAccountCache = process.env.ALPACA_FIRM_ACCOUNT_ID || null;
+let firmLookupDone = false;
+
+/**
+ * The firm ("sweep") account we journal cash from. Set ALPACA_FIRM_ACCOUNT_ID to
+ * skip discovery — you can copy it from the Broker dashboard's "Firm Balance" tab,
+ * or run `node --env-file=server/.env server/alpaca-find-firm.mjs`.
+ */
+export async function getFirmAccountId() {
+  if (firmAccountCache) return firmAccountCache;
+  if (firmLookupDone) return null;
+  firmLookupDone = true;
+  try {
+    const req = requester();
+    const accounts = await req("GET", "/v1/accounts");
+    const firm = (Array.isArray(accounts) ? accounts : []).find(
+      (a) => a.account_type === "firm" || a.account_type === "sweep"
+    );
+    if (firm) firmAccountCache = firm.id;
+  } catch { /* discovery is best-effort */ }
+  return firmAccountCache;
+}
+
+/** Instant funding: journal cash from the firm account into the user's account. */
+async function journalFund(accountId, amount) {
+  const firm = await getFirmAccountId();
+  if (!firm) throw new Error("no firm account id (set ALPACA_FIRM_ACCOUNT_ID)");
+  const req = requester();
+  const journal = await req("POST", "/v1/journals", {
+    from_account: firm,
+    to_account: accountId,
+    entry_type: "JNLC",
+    amount: String(amount),
+    description: "Steward onboarding credit (sandbox)",
+  });
+  return { method: "journal", status: journal.status, id: journal.id };
+}
+
+/** Realistic but slow: virtual ACH. Sandbox delays settlement by 10–30 minutes. */
+async function achFund(accountId, amount) {
   const req = requester();
   let relId;
   try {
@@ -73,9 +131,32 @@ export async function fundAccount(accountId, amount = 1000) {
     relId = (Array.isArray(rels) ? rels[0] : null)?.id;
   }
   if (!relId) throw new Error("no ACH relationship");
+  const transfer = await req("POST", `/v1/accounts/${accountId}/transfers`, {
+    transfer_type: "ach", relationship_id: relId, amount: String(amount), direction: "INCOMING",
+  });
+  return { method: "ach", status: transfer.status, id: transfer.id };
+}
+
+/**
+ * Fund a new sandbox account. Journal first (instant), ACH as fallback.
+ * Returns { method, status, id } so callers can tell the user which happened.
+ */
+export async function fundAccount(accountId, amount = FUND_AMOUNT) {
   try {
-    await req("POST", `/v1/accounts/${accountId}/transfers`, {
-      transfer_type: "ach", relationship_id: relId, amount: String(amount), direction: "INCOMING",
-    });
-  } catch { /* 1/day limit or already funding — fine */ }
+    return await journalFund(accountId, amount);
+  } catch (journalErr) {
+    try {
+      const res = await achFund(accountId, amount);
+      console.warn(
+        `funding: journal unavailable (${String(journalErr.message).split("\n")[0]}) — ` +
+        `fell back to ACH, which takes 10–30 min to settle.`
+      );
+      return res;
+    } catch (achErr) {
+      throw new Error(
+        `funding failed. journal: ${String(journalErr.message).split("\n")[0]} | ` +
+        `ach: ${String(achErr.message).split("\n")[0]}`
+      );
+    }
+  }
 }

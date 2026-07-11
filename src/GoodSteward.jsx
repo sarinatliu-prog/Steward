@@ -497,9 +497,16 @@ export default function GoodSteward() {
           )}
 
           <Card>
-            <Row icon={Globe} label="Market tracking" />
+            <Row icon={Globe} label="Market tracking" right={<InfoTag>illustrative</InfoTag>} />
             <p style={{ fontFamily:sans, fontSize:14, color:C.ink, lineHeight:1.5, margin:"8px 0 0" }}>
               Your portfolio tracks the US market at <b style={{ color:C.pine }}>{derived.similarity}% similarity</b> while excluding <b style={{ color:C.pine }}>{derived.excluded} companies</b> that violate your {fw.name} · {SCREENS[screen].label} standard.
+            </p>
+            {/* Honesty note: these two figures are modelled placeholders, not sourced from
+                fund holdings data. Steward's whole premise is refusing to overstate its own
+                purity — so we say so rather than quietly implying these are audited numbers. */}
+            <p style={{ fontFamily:sans, fontSize:11.5, color:C.stone, lineHeight:1.45, margin:"10px 0 0" }}>
+              Similarity and exclusion counts are <b>illustrative estimates</b>, not audited fund data.
+              Your actual holdings and orders (below and in your statement) are real.
             </p>
           </Card>
 

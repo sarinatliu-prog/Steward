@@ -1,5 +1,19 @@
-// Multi-user persistent store (JSON file). One process, low volume — fine for a
-// sandbox app; swap for Postgres before real scale. Holds users + sessions.
+// Multi-user persistent store.
+//
+// TWO BACKENDS, chosen automatically:
+//
+//   DATABASE_URL set  → Postgres. Durable. Use this in production.
+//   otherwise         → JSON file (server/data/db.json). Fine for local dev.
+//
+// WHY THIS MATTERS: on Render's free plan the filesystem is EPHEMERAL and the
+// service sleeps after ~15 min idle. With the JSON file, every deploy *and every
+// wake-from-sleep* wipes all users, sessions, portfolios and their Alpaca account
+// links — users would silently lose their accounts, and we'd orphan a brand-new
+// Alpaca brokerage account on every re-signup. Postgres fixes that.
+//
+// The whole DB is small (a sandbox demo), so we keep it in memory and persist it
+// as a single JSON blob. That keeps every call site synchronous — only boot and
+// the background flush are async.
 
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -7,27 +21,109 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 
 const FILE = join(dirname(fileURLToPath(import.meta.url)), "..", "data", "db.json");
+const DATABASE_URL = process.env.DATABASE_URL;
 
 function empty() {
   return { users: {}, byEmail: {}, sessions: {} };
 }
 
-let db = load();
+let db = empty();
+let pool = null;
+let dirty = false;
+let flushing = false;
 
-function load() {
+// ── Boot: load whatever is already stored ────────────────────────────────────
+//
+// FAIL-SOFT BY DESIGN: if Postgres is misconfigured or unreachable, we log loudly
+// and fall back to the JSON file rather than crashing. A deploy that boots with
+// degraded (ephemeral) storage is recoverable; a deploy that won't boot at all,
+// during a demo, is not.
+export async function initDb() {
+  if (DATABASE_URL) {
+    try {
+      const { default: pg } = await import("pg");
+      pool = new pg.Pool({
+        connectionString: DATABASE_URL,
+        // Render's managed Postgres requires TLS with a cert Node won't verify by
+        // default; this is the standard setting for their connection strings.
+        ssl: DATABASE_URL.includes("localhost") ? false : { rejectUnauthorized: false },
+      });
+      await pool.query(`CREATE TABLE IF NOT EXISTS steward_state (
+        id INT PRIMARY KEY,
+        data JSONB NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`);
+      const { rows } = await pool.query("SELECT data FROM steward_state WHERE id = 1");
+      db = rows.length ? { ...empty(), ...rows[0].data } : empty();
+
+      // Persist on an interval rather than on every mutation, so a burst of round-ups
+      // doesn't become a burst of writes.
+      setInterval(() => { flush().catch(() => {}); }, 2000).unref();
+
+      console.log(`db: postgres — ${Object.keys(db.users).length} users restored`);
+      return { backend: "postgres", users: Object.keys(db.users).length };
+    } catch (err) {
+      pool = null;
+      console.error("╔══════════════════════════════════════════════════════════════");
+      console.error("║ DATABASE_URL is set but Postgres failed:");
+      console.error("║   " + err.message);
+      console.error("║ Falling back to the local JSON file so the app still boots.");
+      console.error("║ ⚠ On Render this storage is EPHEMERAL — users will be lost");
+      console.error("║   on the next deploy or wake-from-sleep. Fix the database.");
+      console.error("╚══════════════════════════════════════════════════════════════");
+    }
+  }
+
   try {
-    return { ...empty(), ...JSON.parse(readFileSync(FILE, "utf8")) };
+    db = { ...empty(), ...JSON.parse(readFileSync(FILE, "utf8")) };
   } catch {
-    return empty();
+    db = empty();
+  }
+  console.log(
+    `db: json file — ${Object.keys(db.users).length} users restored` +
+    (DATABASE_URL ? " (DEGRADED: postgres unavailable)" : " (set DATABASE_URL for durable storage)")
+  );
+  return { backend: "json", users: Object.keys(db.users).length };
+}
+
+async function flush() {
+  if (!dirty || flushing || !pool) return;
+  flushing = true;
+  dirty = false;
+  try {
+    await pool.query(
+      `INSERT INTO steward_state (id, data, updated_at) VALUES (1, $1, now())
+       ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = now()`,
+      [JSON.stringify(db)]
+    );
+  } catch (err) {
+    dirty = true; // retry on the next tick
+    console.error("db flush failed:", err.message);
+  } finally {
+    flushing = false;
   }
 }
 
 function save() {
+  if (pool) {
+    dirty = true; // picked up by the interval flush
+    return;
+  }
   const dir = dirname(FILE);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const tmp = FILE + ".tmp";
   writeFileSync(tmp, JSON.stringify(db, null, 2));
-  renameSync(tmp, FILE);
+  renameSync(tmp, FILE); // atomic replace
+}
+
+/** Force a final write (called on shutdown so we don't lose the last few seconds). */
+export async function closeDb() {
+  if (pool) {
+    await flush();
+    await pool.end();
+  } else {
+    save();
+  }
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
@@ -70,4 +166,8 @@ export const getSession = (token) => (token ? db.sessions[token] || null : null)
 export function deleteSession(token) { delete db.sessions[token]; save(); }
 
 export const allUsers = () => Object.values(db.users);
-export const stats = () => ({ users: Object.keys(db.users).length, sessions: Object.keys(db.sessions).length });
+export const stats = () => ({
+  users: Object.keys(db.users).length,
+  sessions: Object.keys(db.sessions).length,
+  backend: pool ? "postgres" : "json",
+});
