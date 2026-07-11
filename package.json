@@ -6,8 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "start": "node --env-file-if-exists=server/.env server/api.mjs",
+    "serve": "npm run build && npm start",
+    "test": "node server/test/engine.test.mjs",
     "lint": "oxlint",
     "preview": "vite preview"
+  },
+  "engines": {
+    "node": ">=22"
   },
   "dependencies": {
     "lucide-react": "^1.23.0",

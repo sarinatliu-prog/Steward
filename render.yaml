@@ -1,0 +1,25 @@
+# Render Blueprint — deploys Good Steward as a single web service that serves
+# both the /api routes and the built frontend. Import this repo at
+# https://dashboard.render.com/blueprints and Render reads this file.
+services:
+  - type: web
+    name: good-steward
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # Set these in the Render dashboard (Environment tab). sync:false keeps the
+      # real values OUT of git — you paste them once into Render.
+      - key: ALPACA_CLIENT_ID
+        sync: false
+      - key: ALPACA_CLIENT_SECRET
+        sync: false
+      - key: ALPACA_AUTH_URL
+        value: https://authx.sandbox.alpaca.markets
+      - key: ALPACA_BASE_URL
+        value: https://broker-api.sandbox.alpaca.markets
+      - key: ALPACA_TEST_ACCOUNT_ID
+        sync: false
