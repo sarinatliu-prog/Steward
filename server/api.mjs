@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 import * as db from "./lib/db.js";
 import { hashPassword, verifyPassword, newToken, sessionFromCookie, sessionCookie, validateCredentials } from "./lib/auth.js";
-import { alpacaEnabled, createBrokerageAccount, fundAccount } from "./lib/account-service.js";
+import { alpacaEnabled, createBrokerageAccount, fundIfActive } from "./lib/account-service.js";
 import { recordPurchase, retryPending, rebalance, summary } from "./lib/portfolio.js";
 import { FakeBroker, AlpacaBroker } from "./lib/broker.js";
 import { authFromEnv, makeRequester } from "./lib/alpaca-auth.js";
@@ -145,14 +145,11 @@ const server = createServer(async (req, res) => {
           const acct = await createBrokerageAccount(user.profile);
           user.alpacaAccountId = acct.id;
           accountStatus = acct.status;
-          // Await funding: a journal is instant, so the user's very first round-up
-          // can place a real order immediately instead of bouncing off
-          // "insufficient buying power" for the next half hour.
-          try {
-            funding = await fundAccount(acct.id);
-          } catch (e) {
-            funding = { method: "none", error: String(e.message).split("\n")[0] };
-          }
+          // New sandbox accounts are SUBMITTED for a couple minutes before they go
+          // ACTIVE and can be journal-funded. Try now (instant if already active);
+          // otherwise the background loop funds it the moment it activates.
+          funding = await fundIfActive(acct.id);
+          user.funded = funding.method === "journal";
         } catch (e) {
           accountError = String(e.message).split("\n")[0];
         }
@@ -229,16 +226,27 @@ async function serveStatic(res, pathname) {
   }
 }
 
-// Background: retry queued investments for Alpaca users as funds settle.
+// Background: fund accounts the moment they activate, then invest queued round-ups.
+// New sandbox accounts sit in SUBMITTED for a couple minutes; this journal-funds
+// each one as soon as it flips to ACTIVE, so buying power (and the user's first real
+// order) lands automatically without blocking onboarding or waiting on slow ACH.
 if (ALPACA) {
   setInterval(async () => {
     for (const user of db.allUsers()) {
-      if (!usesAlpaca(user) || user.pendingInvestCents <= 0) continue;
-      const before = user.pendingInvestCents;
-      await retryPending(user, brokerFor(user));
-      if (user.pendingInvestCents !== before) db.saveUser(user);
+      if (!usesAlpaca(user)) continue;
+      let changed = false;
+      if (!user.funded) {
+        const f = await fundIfActive(user.alpacaAccountId);
+        if (f.method === "journal") { user.funded = true; changed = true; }
+      }
+      if (user.pendingInvestCents > 0) {
+        const before = user.pendingInvestCents;
+        await retryPending(user, brokerFor(user));
+        if (user.pendingInvestCents !== before) changed = true;
+      }
+      if (changed) db.saveUser(user);
     }
-  }, 60_000);
+  }, 20_000);
 }
 
 // Flush the last few seconds of state on shutdown (Render sends SIGTERM on deploy).

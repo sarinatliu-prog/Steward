@@ -160,3 +160,35 @@ export async function fundAccount(accountId, amount = FUND_AMOUNT) {
     }
   }
 }
+
+/** Current status of an account (e.g. SUBMITTED, ACTIVE). null on error. */
+export async function getAccountStatus(accountId) {
+  try {
+    const req = requester();
+    const a = await req("GET", `/v1/accounts/${accountId}`);
+    return a.status ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Journal-fund a NEW account, but only once Alpaca has moved it to ACTIVE.
+ * Freshly created sandbox accounts sit in SUBMITTED for a bit and reject journals
+ * with "account's statuses are inadequate for cash journaling". So instead of
+ * blocking onboarding (or falling back to slow ACH), we no-op until the account is
+ * ACTIVE — a background loop calls this again until it succeeds. Instant once ready.
+ *
+ * Returns the journal result, or { method: "pending", ... } if not fundable yet.
+ */
+export async function fundIfActive(accountId, amount = FUND_AMOUNT) {
+  const status = await getAccountStatus(accountId);
+  if (status !== "ACTIVE") {
+    return { method: "pending", status: "awaiting_activation", accountStatus: status };
+  }
+  try {
+    return await journalFund(accountId, amount);
+  } catch (e) {
+    return { method: "pending", status: "journal_error", error: String(e.message).split("\n")[0] };
+  }
+}
