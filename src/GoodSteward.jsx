@@ -124,6 +124,7 @@ export default function GoodSteward() {
   const [showRoundupsInfo, setShowRoundupsInfo] = useState(false);
   const [profile, setProfile]           = useState({ firstName:"", lastName:"", dob:"", address:"", city:"", state:"", postal:"" });
   const [creating, setCreating]         = useState(false);
+  const [profileError, setProfileError] = useState("");
   const { user, setUser, signup, login, logout } = useAuth();
   const { data: live, addPurchase, setConfig, buying } = useLiveData();
 
@@ -142,6 +143,7 @@ export default function GoodSteward() {
 
   // Finish onboarding: send profile + chosen framework, create the sandbox account.
   const openAccount = async () => {
+    setProfileError("");
     setCreating(true);
     try {
       const res = await fetch("/api/profile", {
@@ -151,7 +153,11 @@ export default function GoodSteward() {
           config: { framework: fw.name, holdings: fw.holdings.map(h => ({ symbol: h.t, a: h.a })), tithePct: pct, contribution, screen },
         }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) setUser(u => ({ ...u, hasProfile: true })); // → stage effect moves to app
+      else setProfileError(data.error || "Couldn't open your account. Please check your details.");
+    } catch {
+      setProfileError("Network error — please try again.");
     } finally {
       setCreating(false);
     }
@@ -163,6 +169,49 @@ export default function GoodSteward() {
         ? prev.length > 1 ? prev.filter(f => f !== k) : prev
         : [...prev, k]
     );
+  };
+
+  // Export the monthly statement as a keepsake PDF (opens a clean printable page →
+  // the browser's "Save as PDF"). Zero dependencies.
+  const printStatement = () => {
+    const w = window.open("", "_blank", "width=760,height=980");
+    if (!w) return;
+    const name = profile.firstName ? `${profile.firstName} ${profile.lastName}` : (user?.email ?? "");
+    const month = new Date().toLocaleString("en-US", { month: "long", year: "numeric" });
+    const d = live ? live.display : {};
+    const rows = [
+      ["Portfolio value", d.portfolioValue ?? "$0.00"],
+      ["Invested to date", d.invested ?? "$0.00"],
+      ["Rounded up this month", d.roundupsThisMonth ?? "$0.00"],
+      ["Residue redirected", d.donated ?? "$0.00"],
+      ["In clearing", d.clearing ?? "$0.00"],
+      ["Framework", fw.name],
+      ["Stewardship rate", `${pct}%`],
+    ];
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Good Steward — ${month} Statement</title>
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Hanken+Grotesk:wght@400;500;600;700&display=swap');
+        body{font-family:'Hanken Grotesk',system-ui,sans-serif;color:#1F1C16;background:#F3EEE2;margin:0;padding:48px}
+        .card{max-width:620px;margin:0 auto;background:#FBF8F0;border:1px solid #E3DBC9;border-radius:20px;padding:40px}
+        .kick{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#B48A4A;font-weight:700}
+        h1{font-family:'Fraunces',Georgia,serif;font-weight:500;color:#1C3A2E;font-size:30px;margin:6px 0 2px;letter-spacing:-.01em}
+        .sub{color:#7A7263;font-size:13px;margin-bottom:20px}
+        .row{display:flex;justify-content:space-between;padding:13px 0;border-bottom:1px solid #E3DBC9}
+        .row:last-child{border-bottom:none}
+        .k{color:#7A7263;font-size:13.5px}
+        .v{color:#1C3A2E;font-weight:600;font-size:15px}
+        .quote{font-family:'Fraunces',Georgia,serif;font-style:italic;color:#1C3A2E;font-size:15px;line-height:1.5;margin-top:24px;border-top:1px solid #E3DBC9;padding-top:20px}
+        @media print{body{background:#fff;padding:0}.card{border:none}}
+      </style></head><body><div class="card">
+      <div class="kick">Good Steward · ${month}</div>
+      <h1>Wealth · Impact · Restoration</h1>
+      <div class="sub">${name} — a fuller account than "you made 8.2%."</div>
+      ${rows.map(([k, v]) => `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("")}
+      <div class="quote">"Stewardship: minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."</div>
+      </div></body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 500);
   };
 
   const derived = useMemo(() => {
@@ -439,6 +488,11 @@ export default function GoodSteward() {
             <ProfileInput label="ZIP" value={profile.postal} onChange={set("postal")} placeholder="94105" />
           </div>
         </div>
+        {profileError && (
+          <div style={{ marginTop:12, fontFamily:sans, fontSize:12.5, color:"#B0563F", background:"#B0563F14", padding:"10px 12px", borderRadius:10 }}>
+            {profileError}
+          </div>
+        )}
         <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, marginTop:14 }}>
           By continuing you agree to the customer agreement. No real KYC or money is used in sandbox.
         </p>
@@ -487,17 +541,28 @@ export default function GoodSteward() {
               <Row icon={Wallet} label={`Live · Alpaca ${live.mode === "alpaca" ? "sandbox" : "demo"}`} right={
                 <InfoTag>{live.mode === "alpaca" ? "real account" : "simulated"}</InfoTag>
               } />
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:12 }}>
-                <LiveStat label={`Invested · ${live.etf}`} value={live.display.invested} />
-                <LiveStat label="In clearing" value={live.display.clearing} />
-                <LiveStat label="Rounded up (mo)" value={live.display.roundupsThisMonth} />
-                <LiveStat label={live.display.pending ? "Pending (settling)" : "Orders placed"}
-                          value={live.display.pending ?? String(live.ordersPlaced)} />
-              </div>
-              {live.display.pending && (
-                <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, margin:"10px 0 0" }}>
-                  {live.display.pending} of round-ups is queued to invest — Alpaca's sandbox bank transfer is still settling. It auto-invests the moment funds land.
-                </p>
+              {live.txCount > 0 ? (
+                <>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:12 }}>
+                    <LiveStat label={`Invested · ${live.etf}`} value={live.display.invested} />
+                    <LiveStat label="In clearing" value={live.display.clearing} />
+                    <LiveStat label="Redirected residue" value={live.display.donated} />
+                    <LiveStat label={live.display.pending ? "Pending (settling)" : "Orders placed"}
+                              value={live.display.pending ?? String(live.ordersPlaced)} />
+                  </div>
+                  {live.display.pending && (
+                    <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, margin:"10px 0 0" }}>
+                      {live.display.pending} of round-ups is queued to invest — Alpaca's sandbox bank transfer is still settling. It auto-invests the moment funds land.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div style={{ marginTop:12, padding:"14px 15px", background:C.bg, border:`1px dashed ${C.line}`, borderRadius:12, textAlign:"center" }}>
+                  <div style={{ fontFamily:serif, fontSize:17, color:C.pine, fontWeight:500 }}>Your account is ready.</div>
+                  <div style={{ fontFamily:sans, fontSize:13, color:C.muted, lineHeight:1.5, marginTop:4 }}>
+                    Make your first purchase below — the spare change rounds up, and every $5 buys your {fw.name} ETFs.
+                  </div>
+                </div>
               )}
 
               {/* The core interaction of the whole product: spend money → spare change
@@ -659,6 +724,19 @@ export default function GoodSteward() {
             </div>
           </Card>
 
+          {live && (
+            <Card>
+              <Row icon={HeartHandshake} label="Residue redirected" right={<InfoTag>real</InfoTag>} />
+              <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", marginTop:8 }}>
+                <span style={{ fontFamily:serif, fontSize:34, fontWeight:600, color:C.pine }}>{live.display.donated}</span>
+                <span style={{ fontFamily:sans, fontSize:12.5, color:C.muted }}>diverted from your sweeps so far</span>
+              </div>
+              <p style={{ fontFamily:sans, fontSize:12, color:C.muted, lineHeight:1.5, margin:"8px 0 0" }}>
+                {live.config.tithePct}% of every $5 swept is held back from investment and routed to the residue — real, accumulating money, not just a percentage on a screen.
+              </p>
+            </Card>
+          )}
+
           <Card>
             <Row icon={Coins} label="Routed to flourishing" />
             <div style={{ marginTop:10, display:"grid", gap:10 }}>
@@ -766,6 +844,9 @@ export default function GoodSteward() {
               "Stewardship: minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."
           </p>
           </Card>
+          <button onClick={printStatement} style={{ width:"100%", marginTop:14, padding:"13px 16px", background:C.pine, color:"#fff", border:"none", borderRadius:12, cursor:"pointer", fontFamily:sans, fontSize:14.5, fontWeight:600, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+            <Receipt size={16} /> Save this statement as PDF
+          </button>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:16, padding:"0 4px" }}>
             <span style={{ fontFamily:sans, fontSize:12, color:C.muted }}>{user?.email}</span>
             <button onClick={logout} style={{ ...textLink, color:"#B0563F" }}>Sign out</button>

@@ -13,12 +13,12 @@ import { join, normalize, extname, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import * as db from "./lib/db.js";
-import { hashPassword, verifyPassword, newToken, sessionFromCookie, sessionCookie, validateCredentials } from "./lib/auth.js";
+import { hashPassword, verifyPassword, newToken, sessionFromCookie, sessionCookie, validateCredentials, validateProfile } from "./lib/auth.js";
 import { alpacaEnabled, createBrokerageAccount, fundIfActive } from "./lib/account-service.js";
 import { recordPurchase, retryPending, rebalance, summary } from "./lib/portfolio.js";
 import { FakeBroker, AlpacaBroker } from "./lib/broker.js";
 import { authFromEnv, makeRequester } from "./lib/alpaca-auth.js";
-import { generateMonth, randomPurchase } from "./lib/feed.js";
+import { randomPurchase } from "./lib/feed.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8787;
@@ -67,11 +67,6 @@ async function snapshotFor(user) {
     } catch { /* no position yet */ }
     return { portfolioValueCents: Math.round(Number(acct.portfolio_value ?? 0) * 100), positionValueCents };
   } catch { return null; }
-}
-
-// Seed a little demo history so a new account isn't empty.
-async function seedDemo(user) {
-  for (const p of generateMonth(2, 12)) await recordPurchase(user, p, brokerFor(user));
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -134,6 +129,10 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && path === "/api/profile") {
       const body = await readBody(req);
       if (!body) return sendJson(res, 400, { error: "invalid JSON" });
+      // Validate BEFORE opening an Alpaca account so bad input never 422s in front
+      // of the user (Alpaca rejects e.g. names under 2 chars).
+      const invalid = validateProfile(body.profile || {});
+      if (invalid) return sendJson(res, 400, { error: invalid });
       user.profile = { ...(user.profile || {}), ...(body.profile || {}) };
       if (body.config) {
         user.config = { ...user.config, ...body.config };
@@ -154,7 +153,6 @@ const server = createServer(async (req, res) => {
           accountError = String(e.message).split("\n")[0];
         }
       }
-      if (user.transactions.length === 0) await seedDemo(user);
       db.saveUser(user);
       return sendJson(res, 200, {
         account: user.alpacaAccountId ? { id: user.alpacaAccountId.slice(0, 8) + "…", status: accountStatus } : null,

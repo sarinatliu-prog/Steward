@@ -40,7 +40,9 @@ async function flushPending(user, broker) {
   }
 }
 
-// Record a purchase → round-up → clearing → maybe sweep → invest.
+// Record a purchase → round-up → clearing → maybe sweep. On a sweep, the tithe %
+// is redirected to the charitable "residue" balance (real, accumulating money
+// movement — the soul of the product), and the remainder is invested.
 export async function recordPurchase(user, purchase, broker) {
   const spare = computeRoundUp(purchase.amountCents, 100);
   user.clearingCents += spare;
@@ -48,8 +50,12 @@ export async function recordPurchase(user, purchase, broker) {
   if (user.clearingCents >= THRESHOLD_CENTS) {
     const swept = user.clearingCents;
     user.clearingCents = 0;
-    user.pendingInvestCents += swept;
+    const donation = Math.round((swept * (user.config.tithePct || 0)) / 100);
+    user.donatedCents = (user.donatedCents ?? 0) + donation;
+    const toInvest = swept - donation;
+    user.pendingInvestCents += toInvest;
     tx.swept = swept;
+    tx.donated = donation;
     await flushPending(user, broker);
   }
   user.transactions.push(tx);
@@ -99,9 +105,11 @@ export function summary(user, { mode, alpacaSnapshot } = {}) {
     pendingInvestCents: user.pendingInvestCents,
     portfolioValueCents,
     clearingBalanceCents: user.clearingCents,
+    donatedCents: user.donatedCents ?? 0,
     roundupsThisMonthCents,
     annualDonationCents,
     ordersPlaced: user.orders.length,
+    txCount: user.transactions.length,
     holdings: user.config.holdings.map((h) => ({
       symbol: h.symbol, targetPct: h.a,
       investedCents: user.investedBySymbol[h.symbol] ?? 0,
@@ -119,6 +127,7 @@ export function summary(user, { mode, alpacaSnapshot } = {}) {
       invested: fromCents(user.investedCents),
       pending: user.pendingInvestCents > 0 ? fromCents(user.pendingInvestCents) : null,
       clearing: fromCents(user.clearingCents),
+      donated: fromCents(user.donatedCents ?? 0),
       roundupsThisMonth: fromCents(roundupsThisMonthCents),
       annualDonation: fromCents(annualDonationCents),
     },
