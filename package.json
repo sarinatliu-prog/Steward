@@ -21,6 +21,7 @@
     "plaid": "^45.0.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-plaid-link": "^5.0.0",
     "recharts": "^3.9.2"
   },
   "devDependencies": {

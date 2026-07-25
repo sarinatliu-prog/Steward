@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { usePlaidLink } from "react-plaid-link";
 import { AreaChart, Area, ResponsiveContainer, XAxis, Tooltip } from "recharts";
 import {
   Globe, Church, Star, Moon, Heart, Sliders, ChevronRight, ChevronLeft,
@@ -107,7 +108,10 @@ function useLiveData() {
   const setConfig = (cfg) =>
     fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cfg) })
       .then(r => r.ok ? r.json() : null).then(d => { if (d) setData(d); }).catch(() => {});
-  return { data, addPurchase, setConfig, buying };
+  const syncBank = () =>
+    fetch("/api/plaid/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(r => r.ok ? r.json() : null).then(d => { if (d) setData(d); return d; }).catch(() => null);
+  return { data, addPurchase, setConfig, buying, syncBank };
 }
 
 export default function GoodSteward() {
@@ -126,7 +130,32 @@ export default function GoodSteward() {
   const [creating, setCreating]         = useState(false);
   const [profileError, setProfileError] = useState("");
   const { user, setUser, signup, login, logout } = useAuth();
-  const { data: live, addPurchase, setConfig, buying } = useLiveData();
+  const { data: live, addPurchase, setConfig, buying, syncBank } = useLiveData();
+  const [linkToken, setLinkToken] = useState(null);
+  const [syncing, setSyncing]     = useState(false);
+
+  // Fetch a Plaid link token once the user is onboarded and Plaid is configured but
+  // no bank is linked yet — so the "Link your bank" button is ready to open instantly.
+  useEffect(() => {
+    if (user?.hasProfile && user?.plaidEnabled && !user?.bankLinked && !linkToken) {
+      fetch("/api/plaid/link-token", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+        .then(r => r.ok ? r.json() : null).then(d => { if (d?.linkToken) setLinkToken(d.linkToken); }).catch(() => {});
+    }
+  }, [user, linkToken]);
+
+  // Plaid Link: on success, exchange the public token → mark the bank linked, then sync.
+  const { open: openPlaid, ready: plaidReady } = usePlaidLink({
+    token: linkToken,
+    onSuccess: async (publicToken) => {
+      const res = await fetch("/api/plaid/exchange", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicToken }),
+      });
+      if (res.ok) { setUser(u => ({ ...u, bankLinked: true })); runSync(); }
+    },
+  });
+
+  const runSync = async () => { setSyncing(true); await syncBank(); setSyncing(false); };
 
   const framework = frameworks[0];
   const fw = FRAMEWORKS[framework];
@@ -582,9 +611,32 @@ export default function GoodSteward() {
               >
                 {buying ? "Rounding up…" : <>Make a purchase <ChevronRight size={16} /></>}
               </button>
+
+              {/* Real bank feed via Plaid: link once, then Sync pulls actual transactions
+                  through the same round-up engine. The manual button above stays for demos. */}
+              {user?.plaidEnabled && (
+                user?.bankLinked ? (
+                  <button onClick={runSync} disabled={syncing}
+                    style={{ width:"100%", marginTop:9, padding:"12px 16px", background:"transparent", color:C.pine,
+                      border:`1px solid ${C.pine}`, borderRadius:12, cursor: syncing ? "default" : "pointer",
+                      fontFamily:sans, fontSize:14, fontWeight:600, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+                    {syncing ? "Syncing…" : <>Sync transactions <Receipt size={15} /></>}
+                  </button>
+                ) : (
+                  <button onClick={() => plaidReady && openPlaid()} disabled={!plaidReady}
+                    style={{ width:"100%", marginTop:9, padding:"12px 16px", background:"transparent", color:C.pine,
+                      border:`1px solid ${C.pine}`, borderRadius:12, cursor: plaidReady ? "pointer" : "default",
+                      fontFamily:sans, fontSize:14, fontWeight:600, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+                    <Landmark size={15} /> Link your bank
+                  </button>
+                )
+              )}
+
               <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.45, margin:"8px 0 0", textAlign:"center" }}>
-                Simulates a card purchase. Spare change rounds up, and every $5 buys your
-                {live.mode === "alpaca" ? " ETFs for real in the Alpaca sandbox." : " ETFs (simulated broker)."}
+                {user?.bankLinked
+                  ? "Your bank is linked — Sync pulls real transactions into the round-up engine."
+                  : <>Simulates a card purchase. Spare change rounds up, and every $5 buys your
+                     {live.mode === "alpaca" ? " ETFs for real in the Alpaca sandbox." : " ETFs (simulated broker)."}</>}
               </p>
             </Card>
           )}

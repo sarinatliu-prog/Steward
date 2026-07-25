@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import * as db from "./lib/db.js";
 import { hashPassword, verifyPassword, newToken, sessionFromCookie, sessionCookie, validateCredentials, validateProfile } from "./lib/auth.js";
 import { alpacaEnabled, createBrokerageAccount, fundIfActive } from "./lib/account-service.js";
+import { plaidEnabled, createLinkToken, exchangePublicToken, fetchTransactions } from "./lib/plaid.js";
 import { recordPurchase, retryPending, rebalance, summary } from "./lib/portfolio.js";
 import { FakeBroker, AlpacaBroker } from "./lib/broker.js";
 import { authFromEnv, makeRequester } from "./lib/alpaca-auth.js";
@@ -52,7 +53,12 @@ function currentUser(req) {
   const session = db.getSession(token);
   return session ? db.getUser(session.userId) : null;
 }
-const publicUser = (u) => ({ id: u.id, email: u.email, hasProfile: !!u.profile, accountLinked: !!u.alpacaAccountId });
+const publicUser = (u) => ({
+  id: u.id, email: u.email, hasProfile: !!u.profile,
+  accountLinked: !!u.alpacaAccountId,
+  bankLinked: !!u.plaidAccess,
+  plaidEnabled: plaidEnabled(),
+});
 
 // Live Alpaca position value for a user's account (best-effort, for portfolio value).
 async function snapshotFor(user) {
@@ -120,7 +126,8 @@ const server = createServer(async (req, res) => {
   }
 
   // ===== everything below requires a session =====
-  const authRoutes = ["/api/profile", "/api/portfolio", "/api/purchase", "/api/config"];
+  const authRoutes = ["/api/profile", "/api/portfolio", "/api/purchase", "/api/config",
+                      "/api/plaid/link-token", "/api/plaid/exchange", "/api/plaid/sync"];
   if (authRoutes.includes(path)) {
     const user = currentUser(req);
     if (!user) return sendJson(res, 401, { error: "not signed in" });
@@ -189,6 +196,51 @@ const server = createServer(async (req, res) => {
       }
       db.saveUser(user);
       return sendJson(res, 200, summary(user, { mode: modeFor(user), alpacaSnapshot: await snapshotFor(user) }));
+    }
+
+    // ---- Plaid: start bank linking (returns a temporary link token) ----
+    if (req.method === "POST" && path === "/api/plaid/link-token") {
+      if (!plaidEnabled()) return sendJson(res, 400, { error: "Plaid is not configured." });
+      try {
+        const linkToken = await createLinkToken(user.id);
+        return sendJson(res, 200, { linkToken });
+      } catch (e) {
+        return sendJson(res, 502, { error: String(e.response?.data?.error_message || e.message).split("\n")[0] });
+      }
+    }
+
+    // ---- Plaid: finish linking (exchange public token → saved connection) ----
+    if (req.method === "POST" && path === "/api/plaid/exchange") {
+      if (!plaidEnabled()) return sendJson(res, 400, { error: "Plaid is not configured." });
+      const body = await readBody(req);
+      if (!body?.publicToken) return sendJson(res, 400, { error: "publicToken required" });
+      try {
+        const { accessToken, itemId } = await exchangePublicToken(body.publicToken);
+        user.plaidAccess = { accessToken, itemId };
+        user.plaidCursor = null;
+        db.saveUser(user);
+        return sendJson(res, 200, { bankLinked: true });
+      } catch (e) {
+        return sendJson(res, 502, { error: String(e.response?.data?.error_message || e.message).split("\n")[0] });
+      }
+    }
+
+    // ---- Plaid: pull new transactions → hand each to the SAME round-up engine ----
+    if (req.method === "POST" && path === "/api/plaid/sync") {
+      if (!user.plaidAccess) return sendJson(res, 400, { error: "No bank linked yet." });
+      try {
+        const { transactions, cursor } = await fetchTransactions(user.plaidAccess.accessToken, user.plaidCursor);
+        // fetchTransactions already keeps only positive-amount spend (skips refunds/
+        // deposits), and the cursor guarantees we never count a transaction twice.
+        for (const p of transactions) {
+          await recordPurchase(user, p, brokerFor(user)); // exact same path as "Make a purchase"
+        }
+        user.plaidCursor = cursor;
+        db.saveUser(user);
+        return sendJson(res, 200, { synced: transactions.length, ...summary(user, { mode: modeFor(user), alpacaSnapshot: await snapshotFor(user) }) });
+      } catch (e) {
+        return sendJson(res, 502, { error: String(e.response?.data?.error_message || e.message).split("\n")[0] });
+      }
     }
   }
 

@@ -134,6 +134,10 @@ export function createUser({ email, passHash, salt }) {
     id, email, passHash, salt, createdAt: now,
     profile: null,
     alpacaAccountId: null,
+    // Plaid bank connection: the saved access token, and the sync cursor that
+    // remembers which transactions we've already counted (so nothing double-counts).
+    plaidAccess: null,   // { accessToken, itemId } once a bank is linked
+    plaidCursor: null,   // Plaid /transactions/sync cursor
     // per-user portfolio state
     config: {
       framework: "Broad Ethical",
