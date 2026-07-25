@@ -964,10 +964,13 @@ function AuthScreen({ signup, login, onBack }) {
   );
 }
 
+// The app is a real, full-viewport responsive website — not a phone mockup. On a
+// phone it fills the screen; on desktop the content sits in a comfortable centered
+// column (the layout is a single column by design) against the app background.
 function Frame({ children }) {
   return (
-    <div style={{ minHeight:"100vh", width:"100%", display:"flex", justifyContent:"center", alignItems:"center", padding:"20px 0", background:`repeating-linear-gradient(45deg,#E7E0D0 0 2px,#EAE3D4 2px 4px)`, fontFamily:sans }}>
-      <div style={{ width:390, maxWidth:"94vw", height:800, maxHeight:"92vh", background:"#F3EEE2", borderRadius:40, overflow:"hidden", display:"flex", flexDirection:"column", boxShadow:"0 30px 70px -20px rgba(20,39,31,0.5), 0 0 0 10px #14271F, 0 0 0 11px #2C4F40", position:"relative" }}>
+    <div style={{ minHeight:"100dvh", width:"100%", display:"flex", justifyContent:"center", background:C.bg, fontFamily:sans }}>
+      <div style={{ width:"100%", maxWidth:520, height:"100dvh", background:C.bg, display:"flex", flexDirection:"column", position:"relative", overflow:"hidden", boxShadow:"0 0 80px -40px rgba(20,39,31,0.25)" }}>
         {children}
       </div>
     </div>

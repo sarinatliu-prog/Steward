@@ -1,3 +1,4 @@
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; padding: 0; }
-body { background: #E7E0D0; }
+html, body { height: 100%; }
+body { background: #F3EEE2; }
