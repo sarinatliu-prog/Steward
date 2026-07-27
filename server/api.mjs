@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 import * as db from "./lib/db.js";
 import { hashPassword, verifyPassword, newToken, sessionFromCookie, sessionCookie, validateCredentials, validateProfile } from "./lib/auth.js";
-import { alpacaEnabled, createBrokerageAccount, fundIfActive } from "./lib/account-service.js";
+import { alpacaEnabled, createBrokerageAccount, fundIfActive, fundViaAch } from "./lib/account-service.js";
 import { plaidEnabled, createLinkToken, exchangePublicToken, fetchTransactions } from "./lib/plaid.js";
 import { recordPurchase, retryPending, rebalance, summary } from "./lib/portfolio.js";
 import { FakeBroker, AlpacaBroker } from "./lib/broker.js";
@@ -24,6 +24,8 @@ import { randomPurchase } from "./lib/feed.js";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8787;
 const DIST_DIR = join(HERE, "..", "dist");
+// How long to wait for instant journal funding before firing the ACH fallback.
+const FUND_FALLBACK_MS = Number(process.env.FUND_FALLBACK_MS ?? 3 * 60 * 1000);
 
 // ── Broker wiring ─────────────────────────────────────────────────────────────
 const ALPACA = alpacaEnabled();
@@ -150,6 +152,7 @@ const server = createServer(async (req, res) => {
         try {
           const acct = await createBrokerageAccount(user.profile);
           user.alpacaAccountId = acct.id;
+          user.fundingStartedAt = Date.now();
           accountStatus = acct.status;
           // New sandbox accounts are SUBMITTED for a couple minutes before they go
           // ACTIVE and can be journal-funded. Try now (instant if already active);
@@ -287,7 +290,17 @@ if (ALPACA) {
       let changed = false;
       if (!user.funded) {
         const f = await fundIfActive(user.alpacaAccountId);
-        if (f.method === "journal") { user.funded = true; changed = true; }
+        if (f.method === "journal") {
+          user.funded = true; changed = true;
+        } else if (!user.achStarted && user.fundingStartedAt && Date.now() - user.fundingStartedAt > FUND_FALLBACK_MS) {
+          // Journal still hasn't worked after a few minutes — fall back to ACH so the
+          // account is never permanently stuck at $0. ACH settles slowly, but once it
+          // lands retryPending invests the queued round-ups. Fire it once (1/day cap).
+          try { await fundViaAch(user.alpacaAccountId); } catch { /* best effort */ }
+          user.achStarted = true;
+          user.funded = true; // funding initiated; stop further funding attempts
+          changed = true;
+        }
       }
       if (user.pendingInvestCents > 0) {
         const before = user.pendingInvestCents;

@@ -172,6 +172,13 @@ export async function getAccountStatus(accountId) {
   }
 }
 
+/** ACH fallback funding — used only when journal funding hasn't worked within a
+ * few minutes, so money is never permanently stuck at $0.
+ */
+export async function fundViaAch(accountId, amount = FUND_AMOUNT) {
+  return achFund(accountId, amount);
+}
+
 /**
  * Journal-fund a NEW account, but only once Alpaca has moved it to ACTIVE.
  * Freshly created sandbox accounts sit in SUBMITTED for a bit and reject journals
