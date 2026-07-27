@@ -24,8 +24,6 @@ import { randomPurchase } from "./lib/feed.js";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8787;
 const DIST_DIR = join(HERE, "..", "dist");
-// How long to wait for instant journal funding before firing the ACH fallback.
-const FUND_FALLBACK_MS = Number(process.env.FUND_FALLBACK_MS ?? 3 * 60 * 1000);
 
 // ── Broker wiring ─────────────────────────────────────────────────────────────
 const ALPACA = alpacaEnabled();
@@ -291,15 +289,20 @@ if (ALPACA) {
       if (!user.funded) {
         const f = await fundIfActive(user.alpacaAccountId);
         if (f.method === "journal") {
-          user.funded = true; changed = true;
-        } else if (!user.achStarted && user.fundingStartedAt && Date.now() - user.fundingStartedAt > FUND_FALLBACK_MS) {
-          // Journal still hasn't worked after a few minutes — fall back to ACH so the
-          // account is never permanently stuck at $0. ACH settles slowly, but once it
-          // lands retryPending invests the queued round-ups. Fire it once (1/day cap).
-          try { await fundViaAch(user.alpacaAccountId); } catch { /* best effort */ }
-          user.achStarted = true;
-          user.funded = true; // funding initiated; stop further funding attempts
-          changed = true;
+          user.funded = true; user.fundingMethod = "journal"; changed = true;
+        } else if (!user.achFallbackDone &&
+                   Date.now() - (user.fundingStartedAt || 0) > 180000) {
+          // Journal hasn't funded within 3 min — fall back to ACH so the account is
+          // never permanently stuck at $0. Only mark done if the ACH call succeeds,
+          // so a transient failure retries next loop.
+          try {
+            await fundViaAch(user.alpacaAccountId);
+            user.achFallbackDone = true; user.funded = true; user.fundingMethod = "ach";
+            changed = true;
+          } catch (e) {
+            console.warn("ACH fallback failed for " + user.alpacaAccountId + ": " +
+              String(e.message).split("\n")[0]);
+          }
         }
       }
       if (user.pendingInvestCents > 0) {
