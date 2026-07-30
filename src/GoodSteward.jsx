@@ -165,7 +165,7 @@ export default function GoodSteward() {
   // onboarding; fully set up → the app.
   useEffect(() => {
     if (user === undefined) return;
-    if (!user) setStage("welcome");
+    if (!user) setStage("landing");
     else if (!user.hasProfile) setStage("onboard");
     else setStage("app");
   }, [user]);
@@ -284,32 +284,11 @@ export default function GoodSteward() {
   );
 
   /* ── AUTH (sign up / log in) ── */
-  if (!user && stage === "auth") return <AuthScreen signup={signup} login={login} onBack={() => setStage("welcome")} />;
+  if (!user && stage === "auth") return <AuthScreen signup={signup} login={login} onBack={() => setStage("landing")} />;
 
-  /* ── WELCOME ── */
-  if (stage === "welcome") return (
-    <Frame>
-      <FontInjector />
-      <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"space-between", padding:"44px 28px 36px", background:`radial-gradient(120% 80% at 50% 0%, ${C.pineSoft} 0%, ${C.pine} 55%, #14271F 100%)`, color:"#F3EEE2", position:"relative", overflow:"hidden" }}>
-        <Grain />
-        <div style={{ position:"relative", zIndex:1 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:9 }}>
-            <Scale size={20} color={C.brassSoft} strokeWidth={1.6} />
-            <span style={{ fontFamily:sans, letterSpacing:"0.22em", fontSize:11, textTransform:"uppercase", color:C.brassSoft }}>Good Steward</span>
-          </div>
-        </div>
-        <div style={{ position:"relative", zIndex:1 }}>
-          <p style={{ fontFamily:sans, fontSize:12.5, letterSpacing:"0.16em", textTransform:"uppercase", color:C.brassSoft, marginBottom:18 }}>A stewardship layer for your money</p>
-          <h1 style={{ fontFamily:serif, fontWeight:500, fontSize:39, lineHeight:1.06, margin:0, letterSpacing:"-0.01em" }}>Money is<br /><em style={{ color:C.brassSoft, fontStyle:"italic" }}>stored agency.</em></h1>
-          <p style={{ fontFamily:sans, fontSize:15, lineHeight:1.55, color:"#D9D2C2", marginTop:18, maxWidth:300 }}>Invest it to reduce foreseeable harm, accept that perfect purity is impossible, and redirect the residue toward human flourishing.</p>
-        </div>
-        <div style={{ position:"relative", zIndex:1 }}>
-          <Btn onClick={() => setStage("auth")} dark>Begin <ChevronRight size={17} /></Btn>
-          <p style={{ fontFamily:sans, fontSize:11.5, color:"#9FB3A4", textAlign:"center", marginTop:14 }}>No claim of moral purity. Ethical investing is asymptotic.</p>
-        </div>
-      </div>
-    </Frame>
-  );
+  /* ── LANDING (the real marketing front door) ── */
+  if (!user && (stage === "landing" || stage === "welcome"))
+    return <LandingPage onStart={() => setStage("auth")} />;
 
   /* ── ONBOARDING ── */
   if (stage === "onboard") {
@@ -967,6 +946,96 @@ function AuthScreen({ signup, login, onBack }) {
 // The app is a real, full-viewport responsive website — not a phone mockup. On a
 // phone it fills the screen; on desktop the content sits in a comfortable centered
 // column (the layout is a single column by design) against the app background.
+// Full-width marketing landing page — the front door a stranger hits first. Not the
+// app in a phone frame: a real page that states the philosophy, shows the product,
+// and has one clear call to action.
+function LandingPage({ onStart }) {
+  const wrap = { maxWidth: 1080, margin: "0 auto", padding: "0 24px" };
+  const Step = ({ icon: Icon, n, title, body }) => (
+    <div style={{ flex: "1 1 260px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 18, padding: "26px 24px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ width: 42, height: 42, borderRadius: 12, background: C.pine, display: "grid", placeItems: "center" }}><Icon size={20} color={C.brassSoft} strokeWidth={1.7} /></div>
+        <span style={{ fontFamily: sans, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: C.brass, fontWeight: 700 }}>{n}</span>
+      </div>
+      <h3 style={{ fontFamily: serif, fontSize: 21, fontWeight: 500, color: C.pine, margin: "16px 0 6px" }}>{title}</h3>
+      <p style={{ fontFamily: sans, fontSize: 14.5, lineHeight: 1.55, color: C.muted, margin: 0 }}>{body}</p>
+    </div>
+  );
+  const cta = (label) => (
+    <button onClick={onStart} style={{ background: C.brass, color: "#1F1C16", border: "none", borderRadius: 14, padding: "15px 28px", fontFamily: sans, fontSize: 16, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}>{label} <ChevronRight size={18} /></button>
+  );
+  return (
+    <div style={{ background: C.bg, minHeight: "100dvh", fontFamily: sans, color: C.ink }}>
+      <FontInjector />
+      <nav style={{ ...wrap, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <Scale size={20} color={C.brass} strokeWidth={1.7} />
+          <span style={{ fontFamily: sans, letterSpacing: "0.2em", fontSize: 12, textTransform: "uppercase", color: C.pine, fontWeight: 700 }}>Good Steward</span>
+        </div>
+        <button onClick={onStart} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: sans, fontSize: 14, fontWeight: 600, color: C.pine }}>Sign in</button>
+      </nav>
+
+      <header style={{ background: `radial-gradient(120% 90% at 50% -10%, ${C.pineSoft} 0%, ${C.pine} 55%, #14271F 100%)`, color: "#F3EEE2", position: "relative", overflow: "hidden" }}>
+        <Grain />
+        <div style={{ ...wrap, position: "relative", zIndex: 1, textAlign: "center", padding: "clamp(56px,10vw,110px) 24px" }}>
+          <p style={{ fontFamily: sans, fontSize: 13, letterSpacing: "0.18em", textTransform: "uppercase", color: C.brassSoft, marginBottom: 22 }}>A stewardship layer for your money</p>
+          <h1 style={{ fontFamily: serif, fontWeight: 500, fontSize: "clamp(40px,7vw,74px)", lineHeight: 1.03, margin: 0, letterSpacing: "-0.02em" }}>Money is <em style={{ color: C.brassSoft, fontStyle: "italic" }}>stored agency.</em></h1>
+          <p style={{ fontFamily: sans, fontSize: "clamp(16px,2vw,19px)", lineHeight: 1.55, color: "#D9D2C2", margin: "24px auto 0", maxWidth: 560 }}>Round up your spare change and invest it to reduce foreseeable harm — by your own values — then redirect the unavoidable residue toward human flourishing.</p>
+          <div style={{ marginTop: 36 }}>{cta("Open your account")}</div>
+          <p style={{ fontFamily: sans, fontSize: 12.5, color: "#9FB3A4", marginTop: 18 }}>No claim of moral purity. Ethical investing is asymptotic.</p>
+        </div>
+      </header>
+
+      <section style={{ ...wrap, padding: "clamp(56px,8vw,90px) 24px" }}>
+        <h2 style={{ fontFamily: serif, fontSize: "clamp(28px,4vw,40px)", fontWeight: 500, color: C.pine, textAlign: "center", margin: "0 0 8px", letterSpacing: "-0.01em" }}>Three moves, quietly, in the background.</h2>
+        <p style={{ fontFamily: sans, fontSize: 16, color: C.muted, textAlign: "center", maxWidth: 560, margin: "0 auto 44px", lineHeight: 1.55 }}>You spend as you always do. Steward turns the remainder into a small, deliberate act.</p>
+        <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+          <Step icon={Coins} n="01 · Round up" title="Spare change, gathered" body="Every purchase rounds up to the nearest dollar. A $3.60 coffee sets aside 40¢ — invisible to you, meaningful in aggregate." />
+          <Step icon={Scale} n="02 · Invest by your values" title="Your framework, your holdings" body="Choose a moral framework — from broad ESG to Christian, Jewish, or Islamic screens. Your round-ups buy the ETFs that fit it." />
+          <Step icon={HeartHandshake} n="03 · Redirect the residue" title="Answer what you can't avoid" body="Perfect purity is impossible. A share of every sweep is routed to human flourishing — the residue, given on purpose." />
+        </div>
+      </section>
+
+      <section style={{ background: C.card, borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}` }}>
+        <div style={{ ...wrap, padding: "clamp(56px,8vw,90px) 24px" }}>
+          <p style={{ fontFamily: sans, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: C.brass, fontWeight: 700, textAlign: "center", marginBottom: 10 }}>Invest by what you believe</p>
+          <h2 style={{ fontFamily: serif, fontSize: "clamp(28px,4vw,40px)", fontWeight: 500, color: C.pine, textAlign: "center", margin: "0 0 40px", letterSpacing: "-0.01em" }}>A marketplace of moral frameworks.</h2>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
+            {Object.values(FRAMEWORKS).map((f) => { const Icon = f.icon; return (
+              <div key={f.name} style={{ flex: "1 1 240px", maxWidth: 340, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 14, padding: "18px", display: "flex", gap: 13, alignItems: "flex-start" }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: C.pine, display: "grid", placeItems: "center", flexShrink: 0 }}><Icon size={18} color={C.brassSoft} strokeWidth={1.7} /></div>
+                <div><div style={{ fontFamily: serif, fontSize: 16.5, fontWeight: 500, color: C.ink }}>{f.name}</div><div style={{ fontFamily: sans, fontSize: 12.5, color: C.muted, marginTop: 2, lineHeight: 1.45 }}>{f.blurb}</div></div>
+              </div>
+            ); })}
+          </div>
+        </div>
+      </section>
+
+      <section style={{ ...wrap, padding: "clamp(64px,9vw,110px) 24px", textAlign: "center", maxWidth: 820 }}>
+        <Scale size={26} color={C.brass} strokeWidth={1.4} style={{ marginBottom: 20 }} />
+        <blockquote style={{ fontFamily: serif, fontStyle: "italic", fontSize: "clamp(22px,3.4vw,32px)", lineHeight: 1.4, color: C.pine, margin: 0, letterSpacing: "-0.01em" }}>
+          "Minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."
+        </blockquote>
+        <p style={{ fontFamily: sans, fontSize: 15, color: C.muted, marginTop: 22, lineHeight: 1.6 }}>We name the residue rather than hide it. A monthly statement gives you a fuller account than "you made 8.2%" — wealth, impact, and restoration, side by side.</p>
+      </section>
+
+      <section style={{ background: C.pine, color: "#F3EEE2", position: "relative", overflow: "hidden" }}>
+        <Grain />
+        <div style={{ ...wrap, position: "relative", zIndex: 1, textAlign: "center", padding: "clamp(56px,8vw,88px) 24px" }}>
+          <h2 style={{ fontFamily: serif, fontSize: "clamp(28px,4.5vw,44px)", fontWeight: 500, margin: "0 0 20px", letterSpacing: "-0.01em" }}>Begin stewarding.</h2>
+          {cta("Open your account")}
+          <p style={{ fontFamily: sans, fontSize: 12.5, color: "#9FB3A4", marginTop: 18 }}>Runs on a brokerage sandbox — no real money moves.</p>
+        </div>
+      </section>
+
+      <footer style={{ ...wrap, padding: "28px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}><Scale size={17} color={C.brass} strokeWidth={1.7} /><span style={{ fontFamily: sans, letterSpacing: "0.2em", fontSize: 11, textTransform: "uppercase", color: C.muted, fontWeight: 700 }}>Good Steward</span></div>
+        <span style={{ fontFamily: sans, fontSize: 12, color: C.muted }}>A stewardship layer for your money.</span>
+      </footer>
+    </div>
+  );
+}
+
 function Frame({ children }) {
   return (
     <div style={{ minHeight:"100dvh", width:"100%", display:"flex", justifyContent:"center", background:C.bg, fontFamily:sans }}>
