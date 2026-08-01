@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { usePlaidLink } from "react-plaid-link";
 import { AreaChart, Area, ResponsiveContainer, XAxis, Tooltip } from "recharts";
 import {
@@ -278,7 +278,7 @@ export default function GoodSteward() {
     <Frame>
       <FontInjector />
       <div style={{ flex:1, display:"grid", placeItems:"center", background:C.pine }}>
-        <Scale size={30} color={C.brassSoft} strokeWidth={1.5} />
+        <Mark size={34} color={C.brassSoft} />
       </div>
     </Frame>
   );
@@ -306,7 +306,9 @@ export default function GoodSteward() {
             </div>
           </div>
           <div style={{ flex:1, overflowY:"scroll", overflowX:"hidden", padding:"0 22px 20px", WebkitOverflowScrolling:"touch" }}>
-            {steps[step]()}
+            <div key={step} style={{ animation:"stepIn .45s cubic-bezier(.22,.61,.36,1)" }}>
+              {steps[step]()}
+            </div>
           </div>
           <div style={{ padding:"12px 22px 24px", borderTop:`1px solid ${C.line}`, background:C.card }}>
             <Btn onClick={() => step < last ? setStep(step+1) : (profileOk && !creating && openAccount())}>
@@ -341,7 +343,7 @@ export default function GoodSteward() {
       <div>
         <Kicker>Step 1 · The basics</Kicker>
         <H2>How should we steward the funds?</H2>
-        <P>Risk tolerance shapes the equity-to-bond balance. You can change it anytime.</P>
+        <P>More stock means more growth and more swing; more bonds, the steadier ride. Nothing here is fixed — change it whenever.</P>
         <div style={{ marginTop:20, display:"grid", gap:10 }}>
           {[
             { k:"conservative", t:"Conservative", d:"Steadier, more bonds"       },
@@ -385,7 +387,7 @@ export default function GoodSteward() {
       <div>
         <Kicker>Step 2 · The marketplace</Kicker>
         <H2>Choose your moral frameworks</H2>
-        <P>Select one or more. Your portfolio will be screened against all chosen standards.</P>
+        <P>Pick the tradition or values you invest by. Everything you hold gets measured against it — you can hold more than one.</P>
         <div style={{ marginTop:18, display:"grid", gap:18 }}>
           {FW_GROUPS.map(grp => (
             <div key={grp.label}>
@@ -455,7 +457,7 @@ export default function GoodSteward() {
       <div>
         <Kicker>Step 4 · The offset</Kicker>
         <H2>Redirect the residue</H2>
-        <P>Perfect disentanglement is impossible. Automatically route a share toward human flourishing.</P>
+        <P>No screen catches everything; some harm always slips through. Set aside a share of what you make and send it somewhere good.</P>
         <div style={{ marginTop:18, fontFamily:sans, fontSize:12.5, color:C.muted, marginBottom:8 }}>Apply to</div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
           {Object.entries(OFFSET_BASIS).map(([k,v]) => (
@@ -519,7 +521,7 @@ export default function GoodSteward() {
             <Grain />
             <div style={{ position:"relative", zIndex:1 }}>
               <span style={{ fontFamily:sans, fontSize:12, letterSpacing:"0.14em", textTransform:"uppercase", color:C.brassSoft }}>Portfolio value</span>
-              <div style={{ fontFamily:serif, fontSize:40, fontWeight:500, marginTop:4, letterSpacing:"-0.01em" }}>{live ? live.display.portfolioValue : fmt(14820)}</div>
+              <div style={{ fontFamily:serif, fontSize:40, fontWeight:500, marginTop:4, letterSpacing:"-0.01em" }}>{live ? <AnimatedMoney cents={live.portfolioValueCents} /> : fmt(14820)}</div>
               <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:2 }}>
                 <TrendingUp size={15} color={C.brassSoft} />
                 <span style={{ fontFamily:sans, fontSize:13.5, color:"#CFE0D2" }}>
@@ -636,10 +638,23 @@ export default function GoodSteward() {
 
           <Card>
             <Row icon={Scale} label="Moral leakage" right={<InfoTag>honest</InfoTag>} />
-            <Meter label="Direct exposure removed" value={derived.reduction} color={C.good} />
-            <Meter label="Residual market entanglement" value={derived.residual} color={C.warn} caption="unavoidable" />
-            <p style={{ fontFamily:sans, fontSize:12.5, color:C.muted, lineHeight:1.5, margin:"10px 0 0" }}>
-              Complete disentanglement is impossible. We name the residue rather than hide it — and the offset below answers it.
+            {/* One bar, split honestly: what your screen removes, and the residue it can't. */}
+            <div style={{ display:"flex", height:16, borderRadius:8, overflow:"hidden", marginTop:14, background:C.line }}>
+              <div style={{ width:`${derived.reduction}%`, background:C.good, transition:"width .5s ease" }} />
+              <div style={{ width:`${derived.residual}%`, background:C.warn, transition:"width .5s ease" }} />
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", marginTop:10 }}>
+              <div>
+                <div style={{ fontFamily:serif, fontSize:20, fontWeight:600, color:C.good }}>{derived.reduction}%</div>
+                <div style={{ fontFamily:sans, fontSize:11.5, color:C.muted }}>harm removed</div>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontFamily:serif, fontSize:20, fontWeight:600, color:C.warn }}>{derived.residual}%</div>
+                <div style={{ fontFamily:sans, fontSize:11.5, color:C.muted }}>residue we can't screen out</div>
+              </div>
+            </div>
+            <p style={{ fontFamily:sans, fontSize:12.5, color:C.muted, lineHeight:1.5, margin:"12px 0 0" }}>
+              No portfolio is clean. We show you the part that isn't rather than pretend it away — and the residue is what your giving, below, is for.
             </p>
           </Card>
 
@@ -759,7 +774,7 @@ export default function GoodSteward() {
             <Card>
               <Row icon={HeartHandshake} label="Residue redirected" right={<InfoTag>real</InfoTag>} />
               <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", marginTop:8 }}>
-                <span style={{ fontFamily:serif, fontSize:34, fontWeight:600, color:C.pine }}>{live.display.donated}</span>
+                <AnimatedMoney cents={live.donatedCents} style={{ fontFamily:serif, fontSize:34, fontWeight:600, color:C.pine }} />
                 <span style={{ fontFamily:sans, fontSize:12.5, color:C.muted }}>diverted from your sweeps so far</span>
               </div>
               <p style={{ fontFamily:sans, fontSize:12, color:C.muted, lineHeight:1.5, margin:"8px 0 0" }}>
@@ -857,7 +872,7 @@ export default function GoodSteward() {
         <div style={{ padding:"0 18px" }}>
           <div style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:20, padding:22 }}>
             <div style={{ textAlign:"center", borderBottom:`1px solid ${C.line}`, paddingBottom:16 }}>
-              <Scale size={22} color={C.brass} strokeWidth={1.5} style={{ margin:"0 auto" }} />
+              <div style={{ display:"flex", justifyContent:"center" }}><Mark size={26} color={C.brass} /></div>
               <div style={{ fontFamily:serif, fontSize:21, color:C.pine, fontWeight:500, marginTop:6 }}>Wealth · Impact · Restoration</div>
               <div style={{ fontFamily:sans, fontSize:12, color:C.muted, marginTop:2 }}>Not "you made 8.2%." A fuller account.</div>
             </div>
@@ -920,9 +935,9 @@ function AuthScreen({ signup, login, onBack }) {
       <div style={{ flex:1, display:"flex", flexDirection:"column", background:C.bg, padding:"26px 26px 30px" }}>
         <button onClick={onBack} style={{ ...iconBtn, alignSelf:"flex-start" }}><ChevronLeft size={18} color={C.pine} /></button>
         <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center", gap:14 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:9 }}>
-            <Scale size={22} color={C.brass} strokeWidth={1.6} />
-            <span style={{ fontFamily:sans, letterSpacing:"0.2em", fontSize:11, textTransform:"uppercase", color:C.brass }}>Good Steward</span>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <Mark size={24} color={C.brass} />
+            <span style={{ fontFamily:serif, fontSize:19, fontWeight:600, color:C.pine, letterSpacing:"-0.01em" }}>Good Steward</span>
           </div>
           <h1 style={{ fontFamily:serif, fontSize:30, fontWeight:500, color:C.pine, margin:0, letterSpacing:"-0.01em" }}>
             {mode === "signup" ? "Create your account" : "Welcome back"}
@@ -946,6 +961,44 @@ function AuthScreen({ signup, login, onBack }) {
 // The app is a real, full-viewport responsive website — not a phone mockup. On a
 // phone it fills the screen; on desktop the content sits in a comfortable centered
 // column (the layout is a single column by design) against the app background.
+// Good Steward's mark — a hand-drawn balance, not an icon-library glyph. A beam that
+// tips toward whichever pan holds more weight; here it rests level.
+function Mark({ size = 22, color = C.brass, strokeWidth = 1.5 }) {
+  const p = { stroke: color, strokeWidth, strokeLinecap: "round", strokeLinejoin: "round", fill: "none" };
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
+      <path d="M12 3.2 V20.4" {...p} />
+      <path d="M8.2 20.4 H15.8" {...p} />
+      <path d="M4.6 7.4 H19.4" {...p} />
+      <circle cx="12" cy="3.2" r="1.5" fill={color} />
+      <path d="M4.6 7.4 L2.4 12.4 A2.3 2.3 0 0 0 6.8 12.4 Z" {...p} />
+      <path d="M19.4 7.4 L17.2 12.4 A2.3 2.3 0 0 0 21.6 12.4 Z" {...p} />
+    </svg>
+  );
+}
+
+// Money in motion: eases a cent value from its previous number to the next so a
+// round-up visibly *lands* instead of snapping. Motion that explains the model.
+function money(cents) { return "$" + (cents / 100).toFixed(2); }
+function AnimatedMoney({ cents = 0, style }) {
+  const [shown, setShown] = useState(cents);
+  const from = useRef(cents);
+  useEffect(() => {
+    const start = performance.now(), a = from.current, b = cents, dur = 700;
+    if (a === b) return;
+    let raf;
+    const tick = (t) => {
+      const k = Math.min(1, (t - start) / dur);
+      const eased = 1 - Math.pow(1 - k, 3);
+      setShown(Math.round(a + (b - a) * eased));
+      if (k < 1) raf = requestAnimationFrame(tick); else from.current = b;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [cents]);
+  return <span style={style}>{money(shown)}</span>;
+}
+
 // Full-width marketing landing page — the front door a stranger hits first. Not the
 // app in a phone frame: a real page that states the philosophy, shows the product,
 // and has one clear call to action.
@@ -968,9 +1021,9 @@ function LandingPage({ onStart }) {
     <div style={{ background: C.bg, minHeight: "100dvh", fontFamily: sans, color: C.ink }}>
       <FontInjector />
       <nav style={{ ...wrap, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <Scale size={20} color={C.brass} strokeWidth={1.7} />
-          <span style={{ fontFamily: sans, letterSpacing: "0.2em", fontSize: 12, textTransform: "uppercase", color: C.pine, fontWeight: 700 }}>Good Steward</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Mark size={24} color={C.brass} />
+          <span style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.pine, letterSpacing: "-0.01em" }}>Good Steward</span>
         </div>
         <button onClick={onStart} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: sans, fontSize: 14, fontWeight: 600, color: C.pine }}>Sign in</button>
       </nav>
@@ -1012,7 +1065,7 @@ function LandingPage({ onStart }) {
       </section>
 
       <section style={{ ...wrap, padding: "clamp(64px,9vw,110px) 24px", textAlign: "center", maxWidth: 820 }}>
-        <Scale size={26} color={C.brass} strokeWidth={1.4} style={{ marginBottom: 20 }} />
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}><Mark size={32} color={C.brass} /></div>
         <blockquote style={{ fontFamily: serif, fontStyle: "italic", fontSize: "clamp(22px,3.4vw,32px)", lineHeight: 1.4, color: C.pine, margin: 0, letterSpacing: "-0.01em" }}>
           "Minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."
         </blockquote>
@@ -1029,7 +1082,7 @@ function LandingPage({ onStart }) {
       </section>
 
       <footer style={{ ...wrap, padding: "28px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}><Scale size={17} color={C.brass} strokeWidth={1.7} /><span style={{ fontFamily: sans, letterSpacing: "0.2em", fontSize: 11, textTransform: "uppercase", color: C.muted, fontWeight: 700 }}>Good Steward</span></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}><Mark size={18} color={C.muted} /><span style={{ fontFamily: serif, fontSize: 15, fontWeight: 600, color: C.muted }}>Good Steward</span></div>
         <span style={{ fontFamily: sans, fontSize: 12, color: C.muted }}>A stewardship layer for your money.</span>
       </footer>
     </div>
@@ -1046,7 +1099,9 @@ function Frame({ children }) {
   );
 }
 function FontInjector() {
-  return <style>{`@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&display=swap'); *::-webkit-scrollbar{width:0;height:0}`}</style>;
+  return <style>{`@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&display=swap'); *::-webkit-scrollbar{width:0;height:0}
+    @keyframes stepIn { from { opacity:0; transform:translateY(10px) } to { opacity:1; transform:none } }
+    @keyframes riseIn { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:none } }`}</style>;
 }
 function Grain() {
   return <div style={{ position:"absolute", inset:0, opacity:0.06, pointerEvents:"none", backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")" }} />;
