@@ -622,6 +622,8 @@ export default function GoodSteward() {
             </Card>
           )}
 
+          {live && <FlowStrip live={live} />}
+
           <Card>
             <Row icon={Globe} label="Market tracking" right={<InfoTag>illustrative</InfoTag>} />
             <p style={{ fontFamily:sans, fontSize:14, color:C.ink, lineHeight:1.5, margin:"8px 0 0" }}>
@@ -999,6 +1001,68 @@ function AnimatedMoney({ cents = 0, style }) {
   return <span style={style}>{money(shown)}</span>;
 }
 
+// The model, in motion. Three stops — Spend → Clearing → Invested — with giving
+// branching below. When a round-up lands a coin travels Spend→Clearing; when the
+// clearing balance sweeps, a coin runs Clearing→Invested and a smaller one peels
+// off to Give. Motion that shows how the money moves, not decoration.
+function FlowStrip({ live }) {
+  const [pulse, setPulse] = useState(null); // { seq, type }
+  const prev = useRef(null);
+  const seq = useRef(0);
+  useEffect(() => {
+    if (!live) return;
+    const p = prev.current;
+    if (p) {
+      if (live.investedCents > p.investedCents) setPulse({ seq: ++seq.current, type: "sweep" });
+      else if (live.clearingBalanceCents !== p.clearingBalanceCents || live.roundupsThisMonthCents !== p.roundupsThisMonthCents)
+        setPulse({ seq: ++seq.current, type: "purchase" });
+    }
+    prev.current = live;
+  }, [live]);
+
+  const Node = ({ icon: Icon, label, value, popKey }) => (
+    <div style={{ textAlign: "center", width: 92, position: "relative", zIndex: 1 }}>
+      <div key={popKey} style={{ width: 40, height: 40, borderRadius: "50%", background: C.pine, display: "grid", placeItems: "center", margin: "0 auto", animation: popKey ? "nodePop .5s ease" : "none" }}>
+        <Icon size={18} color={C.brassSoft} strokeWidth={1.8} />
+      </div>
+      <div style={{ fontFamily: sans, fontSize: 11.5, fontWeight: 700, color: C.ink, marginTop: 7 }}>{label}</div>
+      <div style={{ fontFamily: sans, fontSize: 11, color: C.muted }}>{value}</div>
+    </div>
+  );
+  const p = pulse;
+  const coinAnim = p ? (p.type === "sweep" ? "flowToInvested .9s cubic-bezier(.5,0,.5,1) forwards" : "flowToClearing .9s cubic-bezier(.4,0,.4,1) forwards") : null;
+
+  return (
+    <Card>
+      <Row icon={TrendingUp} label="How the money moves" />
+      <div style={{ position: "relative", height: 128, marginTop: 14 }}>
+        {/* track */}
+        <div style={{ position: "absolute", top: 20, left: "13%", right: "13%", height: 2, background: C.line }} />
+        {/* connector down to giving */}
+        <div style={{ position: "absolute", left: "47%", top: 40, width: 2, height: 46, background: C.line }} />
+        {/* nodes */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <Node icon={Wallet} label="Spend" value="a purchase" popKey={p ? `s${p.seq}` : null} />
+          <Node icon={PiggyBank} label="Clearing" value={live ? live.display.clearing : "$0.00"} popKey={p ? `c${p.seq}` : null} />
+          <Node icon={TrendingUp} label="Invested" value={live ? live.display.invested : "$0.00"} popKey={p && p.type === "sweep" ? `i${p.seq}` : null} />
+        </div>
+        {/* give branch */}
+        <div style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", top: 92, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+          <HeartHandshake size={13} color={C.brass} />
+          <span style={{ fontFamily: sans, fontSize: 11.5, color: C.muted }}>Give · {live ? live.display.donated : "$0.00"}</span>
+        </div>
+        {/* traveling coin(s) */}
+        {p && (
+          <span key={`coin${p.seq}`} style={{ position: "absolute", top: 14, width: 14, height: 14, borderRadius: "50%", background: C.brass, boxShadow: `0 0 0 3px ${C.brass}22`, animation: coinAnim }} />
+        )}
+        {p && p.type === "sweep" && (
+          <span key={`give${p.seq}`} style={{ position: "absolute", left: "47%", top: 20, width: 10, height: 10, borderRadius: "50%", background: C.brassSoft, animation: "flowToGive .9s ease forwards" }} />
+        )}
+      </div>
+    </Card>
+  );
+}
+
 // Full-width marketing landing page — the front door a stranger hits first. Not the
 // app in a phone frame: a real page that states the philosophy, shows the product,
 // and has one clear call to action.
@@ -1101,7 +1165,11 @@ function Frame({ children }) {
 function FontInjector() {
   return <style>{`@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&display=swap'); *::-webkit-scrollbar{width:0;height:0}
     @keyframes stepIn { from { opacity:0; transform:translateY(10px) } to { opacity:1; transform:none } }
-    @keyframes riseIn { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:none } }`}</style>;
+    @keyframes riseIn { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:none } }
+    @keyframes flowToClearing { 0% { left:9%; opacity:0; transform:scale(.6) } 15% { opacity:1; transform:scale(1) } 100% { left:47%; opacity:1; transform:scale(1) } }
+    @keyframes flowToInvested { 0% { left:47%; opacity:1 } 100% { left:85%; opacity:1 } }
+    @keyframes flowToGive { 0% { left:47%; top:20px; opacity:1; transform:scale(.9) } 100% { left:47%; top:84px; opacity:0; transform:scale(.7) } }
+    @keyframes nodePop { 0% { transform:scale(1) } 40% { transform:scale(1.14) } 100% { transform:scale(1) } }`}</style>;
 }
 function Grain() {
   return <div style={{ position:"absolute", inset:0, opacity:0.06, pointerEvents:"none", backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")" }} />;
