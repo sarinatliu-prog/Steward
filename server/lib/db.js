@@ -166,8 +166,29 @@ export function createSession(userId, token) {
   save();
   return token;
 }
-export const getSession = (token) => (token ? db.sessions[token] || null : null);
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+export function getSession(token) {
+  if (!token) return null;
+  const s = db.sessions[token];
+  if (!s) return null;
+  if (Date.now() - (s.createdAt || 0) > SESSION_TTL_MS) { delete db.sessions[token]; save(); return null; }
+  return s;
+}
 export function deleteSession(token) { delete db.sessions[token]; save(); }
+
+// ── Per-user audit trail ────────────────────────────────────────────────────
+// Append-only record of the security- and money-relevant events on an account.
+// A real go-live needs this for support, disputes, and compliance; building it in
+// sandbox now means it's already there when it matters. Capped so it can't grow
+// unbounded in the JSON store.
+export function audit(user, event, detail = {}) {
+  if (!user) return;
+  user.audit = user.audit || [];
+  user.audit.push({ ts: Date.now(), event, ...detail });
+  if (user.audit.length > 200) user.audit = user.audit.slice(-200);
+  db.users[user.id] = user;
+  save();
+}
 
 export const allUsers = () => Object.values(db.users);
 

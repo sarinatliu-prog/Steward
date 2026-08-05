@@ -68,6 +68,17 @@ const GROWTH = [
 
 const fmt = (n) => "$" + Math.round(n).toLocaleString("en-US");
 
+// Human labels for the audit-trail event names.
+const AUDIT_LABEL = {
+  account_signup: "Account created",
+  login: "Signed in",
+  brokerage_account_created: "Brokerage account opened",
+  funding: "Account funded",
+  sweep_invested: "Round-ups swept & invested",
+  bank_linked: "Bank connected",
+  config_changed: "Framework updated",
+};
+
 // Lightweight funnel tracking — fire-and-forget, aggregate counts only, no PII.
 const track = (name) => {
   try {
@@ -140,6 +151,13 @@ export default function GoodSteward() {
   const { data: live, addPurchase, setConfig, buying, syncBank } = useLiveData();
   const [linkToken, setLinkToken] = useState(null);
   const [syncing, setSyncing]     = useState(false);
+  const [activity, setActivity]   = useState([]);
+
+  // Pull the account's audit trail so the Statement can show what actually happened.
+  useEffect(() => {
+    if (stage !== "app") return;
+    fetch("/api/audit").then(r => r.ok ? r.json() : null).then(d => { if (d?.events) setActivity(d.events); }).catch(() => {});
+  }, [stage, live]);
 
   // Fetch a Plaid link token once the user is onboarded and Plaid is configured but
   // no bank is linked yet — so the "Link your bank" button is ready to open instantly.
@@ -943,6 +961,19 @@ export default function GoodSteward() {
               "Stewardship: minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."
           </p>
           </Card>
+          {activity.length > 0 && (
+            <Card>
+              <Row icon={Receipt} label="Account activity" right={<InfoTag>audit trail</InfoTag>} />
+              <div style={{ marginTop:10, display:"grid", gap:2 }}>
+                {activity.slice(0, 6).map((e, i) => (
+                  <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", padding:"7px 0", borderBottom:i<Math.min(6,activity.length)-1?`1px solid ${C.line}`:"none" }}>
+                    <span style={{ fontFamily:sans, fontSize:13, color:C.ink }}>{AUDIT_LABEL[e.event] || e.event.replace(/_/g," ")}</span>
+                    <span style={{ fontFamily:sans, fontSize:11.5, color:C.muted }}>{new Date(e.ts).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
           <div style={{ display:"flex", gap:10, marginTop:14 }}>
             <button onClick={shareStatement} style={{ flex:1, padding:"13px 16px", background:C.pine, color:"#fff", border:"none", borderRadius:12, cursor:"pointer", fontFamily:sans, fontSize:14.5, fontWeight:600, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
               <HeartHandshake size={16} /> Share this month

@@ -26,9 +26,15 @@ export function sessionFromCookie(cookieHeader) {
   return null;
 }
 
+export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
 export function sessionCookie(token, { clear = false } = {}) {
-  const base = "sid=" + (clear ? "" : token) + "; HttpOnly; Path=/; SameSite=Lax";
-  return clear ? base + "; Max-Age=0" : base + "; Max-Age=" + 60 * 60 * 24 * 30;
+  // Secure only in production (behind HTTPS on Render); on localhost http a Secure
+  // cookie would never be stored and would break local dev. DATABASE_URL is our
+  // "this is production" signal.
+  const secure = process.env.DATABASE_URL ? "; Secure" : "";
+  const base = "sid=" + (clear ? "" : token) + "; HttpOnly; Path=/; SameSite=Lax" + secure;
+  return clear ? base + "; Max-Age=0" : base + "; Max-Age=" + SESSION_TTL_MS / 1000;
 }
 
 // Basic validation shared by signup.

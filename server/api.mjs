@@ -75,14 +75,41 @@ async function snapshotFor(user) {
   } catch { return null; }
 }
 
+// ── Error monitoring ──────────────────────────────────────────────────────────
+// A tiny in-memory ring buffer. Real production would ship these to Sentry/Datadog;
+// the point is that nothing is swallowed silently and clients never see a stack trace.
+const errorLog = [];
+function captureError(err, ctx) {
+  const entry = { ts: Date.now(), message: String(err?.message || err), where: ctx };
+  errorLog.push(entry);
+  if (errorLog.length > 100) errorLog.shift();
+  console.error(`[error] ${ctx}: ${entry.message}`);
+}
+
+// Basic login throttle: slow down credential-stuffing without a full auth service.
+const loginAttempts = new Map(); // key -> { n, first }
+function loginBlocked(key) {
+  const now = Date.now(), win = 10 * 60 * 1000, max = 8;
+  const rec = loginAttempts.get(key);
+  if (rec && now - rec.first > win) { loginAttempts.delete(key); return false; }
+  return !!(rec && rec.n >= max);
+}
+function loginFailed(key) {
+  const now = Date.now(), rec = loginAttempts.get(key);
+  if (!rec || now - rec.first > 10 * 60 * 1000) loginAttempts.set(key, { n: 1, first: now });
+  else rec.n++;
+}
+const loginOk = (key) => loginAttempts.delete(key);
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 const server = createServer(async (req, res) => {
+ try {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const path = url.pathname;
 
   // ---- health ----
   if (req.method === "GET" && path === "/api/health") {
-    return sendJson(res, 200, { ok: true, alpaca: ALPACA, ...db.stats() });
+    return sendJson(res, 200, { ok: true, alpaca: ALPACA, errors: errorLog.length, ...db.stats() });
   }
 
   // ---- waitlist: capture demand while real money is gated behind compliance ----
@@ -117,6 +144,7 @@ const server = createServer(async (req, res) => {
     if (db.getUserByEmail(body.email)) return sendJson(res, 409, { error: "An account with that email already exists." });
     const { salt, passHash } = hashPassword(body.password);
     const user = db.createUser({ email: body.email, salt, passHash });
+    db.audit(user, "account_signup");
     const token = newToken();
     db.createSession(user.id, token);
     return sendJson(res, 200, { user: publicUser(user) }, { "Set-Cookie": sessionCookie(token) });
@@ -126,10 +154,15 @@ const server = createServer(async (req, res) => {
   if (req.method === "POST" && path === "/api/login") {
     const body = await readBody(req);
     if (!body) return sendJson(res, 400, { error: "invalid JSON" });
+    const key = String(body.email || "").toLowerCase();
+    if (loginBlocked(key)) return sendJson(res, 429, { error: "Too many attempts. Try again in a few minutes." });
     const user = db.getUserByEmail(body.email);
     if (!user || !verifyPassword(body.password || "", user.salt, user.passHash)) {
+      loginFailed(key);
       return sendJson(res, 401, { error: "Wrong email or password." });
     }
+    loginOk(key);
+    db.audit(user, "login");
     const token = newToken();
     db.createSession(user.id, token);
     return sendJson(res, 200, { user: publicUser(user) }, { "Set-Cookie": sessionCookie(token) });
@@ -150,10 +183,15 @@ const server = createServer(async (req, res) => {
 
   // ===== everything below requires a session =====
   const authRoutes = ["/api/profile", "/api/portfolio", "/api/purchase", "/api/config",
-                      "/api/plaid/link-token", "/api/plaid/exchange", "/api/plaid/sync"];
+                      "/api/plaid/link-token", "/api/plaid/exchange", "/api/plaid/sync", "/api/audit"];
   if (authRoutes.includes(path)) {
     const user = currentUser(req);
     if (!user) return sendJson(res, 401, { error: "not signed in" });
+
+    // ---- the user's own audit trail ----
+    if (req.method === "GET" && path === "/api/audit") {
+      return sendJson(res, 200, { events: (user.audit || []).slice().reverse() });
+    }
 
     // ---- complete profile → create the real sandbox brokerage account ----
     if (req.method === "POST" && path === "/api/profile") {
@@ -175,6 +213,7 @@ const server = createServer(async (req, res) => {
           user.alpacaAccountId = acct.id;
           user.fundingStartedAt = Date.now();
           accountStatus = acct.status;
+          db.audit(user, "brokerage_account_created", { account: acct.id, status: acct.status });
           // New sandbox accounts are SUBMITTED for a couple minutes before they go
           // ACTIVE and can be journal-funded. Try now (instant if already active);
           // otherwise the background loop funds it the moment it activates.
@@ -204,7 +243,8 @@ const server = createServer(async (req, res) => {
       const p = body && body.amount != null
         ? { name: body.name ?? "Manual purchase", category: body.category ?? "Other", amountCents: Math.round(Number(body.amount) * 100), ts: Date.now() }
         : randomPurchase();
-      await recordPurchase(user, p, brokerFor(user));
+      const tx = await recordPurchase(user, p, brokerFor(user));
+      if (tx.swept) db.audit(user, "sweep_invested", { swept: tx.swept, donated: tx.donated || 0 });
       db.saveUser(user);
       return sendJson(res, 200, summary(user, { mode: modeFor(user), alpacaSnapshot: await snapshotFor(user) }));
     }
@@ -242,6 +282,7 @@ const server = createServer(async (req, res) => {
         const { accessToken, itemId } = await exchangePublicToken(body.publicToken);
         user.plaidAccess = { accessToken, itemId };
         user.plaidCursor = null;
+        db.audit(user, "bank_linked", { itemId });
         db.saveUser(user);
         return sendJson(res, 200, { bankLinked: true });
       } catch (e) {
@@ -272,6 +313,11 @@ const server = createServer(async (req, res) => {
   if (path.startsWith("/api/")) return sendJson(res, 404, { error: "not found" });
   if (req.method === "GET") return serveStatic(res, path);
   sendJson(res, 404, { error: "not found" });
+ } catch (err) {
+  // Never leak a stack trace to the client; capture it for monitoring instead.
+  captureError(err, `${req.method} ${req.url}`);
+  try { if (!res.headersSent) sendJson(res, 500, { error: "Something went wrong." }); } catch { /* ignore */ }
+ }
 });
 
 // ── Static file serving ───────────────────────────────────────────────────────
