@@ -68,6 +68,13 @@ const GROWTH = [
 
 const fmt = (n) => "$" + Math.round(n).toLocaleString("en-US");
 
+// Lightweight funnel tracking — fire-and-forget, aggregate counts only, no PII.
+const track = (name) => {
+  try {
+    fetch("/api/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+  } catch { /* never let analytics break the app */ }
+};
+
 // Auth: current user (undefined = loading, null = signed out, object = signed in).
 function useAuth() {
   const [user, setUser] = useState(undefined);
@@ -79,7 +86,7 @@ function useAuth() {
       .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }));
   const signup = async (email, password) => {
     const { ok, data } = await call("/api/signup", { email, password });
-    if (ok) setUser(data.user); return { ok, error: data.error };
+    if (ok) { track("signup"); setUser(data.user); } return { ok, error: data.error };
   };
   const login = async (email, password) => {
     const { ok, data } = await call("/api/login", { email, password });
@@ -183,7 +190,7 @@ export default function GoodSteward() {
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) setUser(u => ({ ...u, hasProfile: true })); // → stage effect moves to app
+      if (res.ok) { track("onboarding_done"); setUser(u => ({ ...u, hasProfile: true })); } // → stage effect moves to app
       else setProfileError(data.error || "Couldn't open your account. Please check your details.");
     } catch {
       setProfileError("Network error — please try again.");
@@ -243,6 +250,46 @@ export default function GoodSteward() {
     setTimeout(() => w.print(), 500);
   };
 
+  // Shareable artifact — a card a user would actually post: "here's the residue I
+  // redirected this month." Uses the native share sheet when available, otherwise
+  // opens a clean card to screenshot and copies the line to the clipboard.
+  const shareStatement = async () => {
+    track("share_open");
+    const d = live ? live.display : {};
+    const donated = d.donated ?? "$0.00", invested = d.invested ?? "$0.00";
+    const line = `This month with Good Steward I invested ${invested} of spare change by my values — and redirected ${donated} of the residue to giving.`;
+    const url = window.location.origin;
+    if (navigator.share) {
+      try { await navigator.share({ title: "Good Steward", text: line, url }); return; } catch { /* cancelled — fall through */ }
+    }
+    try { await navigator.clipboard?.writeText(line + " " + url); } catch { /* ignore */ }
+    const w = window.open("", "_blank", "width=620,height=680");
+    if (!w) return;
+    const month = new Date().toLocaleString("en-US", { month: "long", year: "numeric" });
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Good Steward</title>
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Hanken+Grotesk:wght@400;600;700&display=swap');
+        html,body{margin:0;height:100%} body{display:grid;place-items:center;background:#14271F;font-family:'Hanken Grotesk',sans-serif}
+        .card{width:520px;max-width:92vw;aspect-ratio:1/1.15;background:radial-gradient(120% 90% at 50% -10%,#2C4F40 0%,#1C3A2E 55%,#14271F 100%);border-radius:26px;padding:44px;box-sizing:border-box;color:#F3EEE2;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 30px 80px -30px rgba(0,0,0,.6)}
+        .kick{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#D8B877;font-weight:700}
+        .big{font-family:'Fraunces',Georgia,serif;font-weight:500;font-size:26px;line-height:1.25;letter-spacing:-.01em;margin:18px 0 0}
+        .row{display:flex;gap:28px;margin-top:26px}
+        .stat .n{font-family:'Fraunces',serif;font-weight:600;font-size:34px;color:#fff}
+        .stat .l{font-size:12px;color:#9FB3A4;margin-top:2px}
+        .brass{color:#D8B877}
+        .foot{font-size:12.5px;color:#9FB3A4;display:flex;justify-content:space-between;align-items:center}
+      </style></head><body><div class="card">
+      <div><div class="kick">Good Steward · ${month}</div>
+      <div class="big">Spare change, invested by my values — and the residue given on purpose.</div></div>
+      <div class="row">
+        <div class="stat"><div class="n">${invested}</div><div class="l">invested this month</div></div>
+        <div class="stat"><div class="n brass">${donated}</div><div class="l">residue redirected</div></div>
+      </div>
+      <div class="foot"><span>Money is stored agency.</span><span>${url.replace(/^https?:\/\//,"")}</span></div>
+      </div></body></html>`);
+    w.document.close();
+  };
+
   const derived = useMemo(() => {
     const avgExcl      = Math.round(frameworks.reduce((s,k) => s + FRAMEWORKS[k].excl, 0) / frameworks.length) + sc.exclAdd;
     const avgSim       = +(frameworks.reduce((s,k) => s + FRAMEWORKS[k].sim, 0) / frameworks.length - sc.simHit).toFixed(1);
@@ -286,9 +333,13 @@ export default function GoodSteward() {
   /* ── AUTH (sign up / log in) ── */
   if (!user && stage === "auth") return <AuthScreen signup={signup} login={login} onBack={() => setStage("landing")} />;
 
+  /* ── TRUST (how it works · what's real) ── */
+  if (!user && stage === "trust")
+    return <TrustPage onBack={() => setStage("landing")} onStart={() => setStage("auth")} />;
+
   /* ── LANDING (the real marketing front door) ── */
   if (!user && (stage === "landing" || stage === "welcome"))
-    return <LandingPage onStart={() => setStage("auth")} />;
+    return <LandingPage onStart={() => setStage("auth")} onTrust={() => setStage("trust")} />;
 
   /* ── ONBOARDING ── */
   if (stage === "onboard") {
@@ -301,7 +352,7 @@ export default function GoodSteward() {
         <div style={{ flex:1, display:"flex", flexDirection:"column", background:C.bg, overflow:"hidden", minHeight:0 }}>
           <div style={{ padding:"20px 22px 8px" }}>
             <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
-              {step > 0 && <button onClick={() => setStep(step-1)} style={iconBtn}><ChevronLeft size={18} color={C.pine} /></button>}
+              {step > 0 && <button onClick={() => setStep(step-1)} aria-label="Go back a step" style={iconBtn}><ChevronLeft size={18} color={C.pine} /></button>}
               <Dots n={steps.length} active={step} />
             </div>
           </div>
@@ -364,11 +415,11 @@ export default function GoodSteward() {
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <div style={{ display:"flex", alignItems:"center", gap:8 }}>
               <span style={{ fontFamily:sans, fontSize:13, color:C.muted }}>Round-ups</span>
-              <button onClick={() => setShowRoundupsInfo(v => !v)} style={{ background:"none", border:"none", cursor:"pointer", padding:0, display:"grid", placeItems:"center" }}>
+              <button onClick={() => setShowRoundupsInfo(v => !v)} aria-label="What are round-ups?" style={{ background:"none", border:"none", cursor:"pointer", padding:0, display:"grid", placeItems:"center" }}>
                 <Info size={14} color={showRoundupsInfo ? C.pine : C.muted} />
               </button>
             </div>
-            <div onClick={() => setRoundups(v => !v)} style={{ width:44, height:26, borderRadius:13, background:roundups ? C.pine : C.line, cursor:"pointer", position:"relative", transition:"background .25s", flexShrink:0 }}>
+            <div onClick={() => setRoundups(v => !v)} role="switch" aria-checked={roundups} aria-label="Round-ups" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setRoundups(v => !v); } }} style={{ width:44, height:26, borderRadius:13, background:roundups ? C.pine : C.line, cursor:"pointer", position:"relative", transition:"background .25s", flexShrink:0 }}>
               <div style={{ position:"absolute", top:3, left:roundups ? 21 : 3, width:20, height:20, borderRadius:"50%", background:"#fff", transition:"left .25s", boxShadow:"0 1px 4px rgba(0,0,0,0.18)" }} />
             </div>
           </div>
@@ -892,9 +943,14 @@ export default function GoodSteward() {
               "Stewardship: minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."
           </p>
           </Card>
-          <button onClick={printStatement} style={{ width:"100%", marginTop:14, padding:"13px 16px", background:C.pine, color:"#fff", border:"none", borderRadius:12, cursor:"pointer", fontFamily:sans, fontSize:14.5, fontWeight:600, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
-            <Receipt size={16} /> Save this statement as PDF
-          </button>
+          <div style={{ display:"flex", gap:10, marginTop:14 }}>
+            <button onClick={shareStatement} style={{ flex:1, padding:"13px 16px", background:C.pine, color:"#fff", border:"none", borderRadius:12, cursor:"pointer", fontFamily:sans, fontSize:14.5, fontWeight:600, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+              <HeartHandshake size={16} /> Share this month
+            </button>
+            <button onClick={printStatement} style={{ flex:1, padding:"13px 16px", background:"transparent", color:C.pine, border:`1px solid ${C.pine}`, borderRadius:12, cursor:"pointer", fontFamily:sans, fontSize:14.5, fontWeight:600, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+              <Receipt size={16} /> Save PDF
+            </button>
+          </div>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:16, padding:"0 4px" }}>
             <span style={{ fontFamily:sans, fontSize:12, color:C.muted }}>{user?.email}</span>
             <button onClick={logout} style={{ ...textLink, color:"#B0563F" }}>Sign out</button>
@@ -1063,11 +1119,41 @@ function FlowStrip({ live }) {
   );
 }
 
+// Waitlist — real money is gated behind compliance, so capture demand honestly.
+function WaitlistForm({ dark = false }) {
+  const [email, setEmail] = useState("");
+  const [state, setState] = useState("idle"); // idle | loading | done | error
+  const [msg, setMsg] = useState("");
+  const submit = async () => {
+    if (state === "loading" || !email) return;
+    setState("loading");
+    try {
+      const r = await fetch("/api/waitlist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) { setState("done"); track("waitlist_join"); }
+      else { setState("error"); setMsg(d.error || "Something went wrong."); }
+    } catch { setState("error"); setMsg("Network error — try again."); }
+  };
+  if (state === "done")
+    return <p style={{ fontFamily: sans, fontSize: 15, fontWeight: 600, color: dark ? C.brassSoft : C.pine, textAlign: "center", margin: 0 }}>You're on the list. We'll write the day real money opens.</p>;
+  return (
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center", maxWidth: 440, margin: "0 auto" }}>
+      <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="you@example.com" aria-label="Email for the waitlist"
+        onKeyDown={(e) => e.key === "Enter" && submit()}
+        style={{ flex: "1 1 220px", fontFamily: sans, fontSize: 15, padding: "13px 14px", borderRadius: 12, border: `1px solid ${dark ? "#3a5346" : C.line}`, background: dark ? "rgba(255,255,255,0.06)" : C.card, color: dark ? "#F3EEE2" : C.ink, outline: "none" }} />
+      <button onClick={submit} style={{ background: C.brass, color: "#1F1C16", border: "none", borderRadius: 12, padding: "13px 22px", fontFamily: sans, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>{state === "loading" ? "…" : "Join the waitlist"}</button>
+      {state === "error" && <div style={{ flexBasis: "100%", textAlign: "center", fontFamily: sans, fontSize: 12.5, color: "#E0A090" }}>{msg}</div>}
+    </div>
+  );
+}
+
 // Full-width marketing landing page — the front door a stranger hits first. Not the
 // app in a phone frame: a real page that states the philosophy, shows the product,
 // and has one clear call to action.
-function LandingPage({ onStart }) {
+function LandingPage({ onStart, onTrust }) {
   const wrap = { maxWidth: 1080, margin: "0 auto", padding: "0 24px" };
+  useEffect(() => { track("landing_view"); }, []);
+  const start = () => { track("cta_click"); onStart(); };
   const Step = ({ icon: Icon, n, title, body }) => (
     <div style={{ flex: "1 1 260px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 18, padding: "26px 24px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1079,7 +1165,7 @@ function LandingPage({ onStart }) {
     </div>
   );
   const cta = (label) => (
-    <button onClick={onStart} style={{ background: C.brass, color: "#1F1C16", border: "none", borderRadius: 14, padding: "15px 28px", fontFamily: sans, fontSize: 16, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}>{label} <ChevronRight size={18} /></button>
+    <button onClick={start} style={{ background: C.brass, color: "#1F1C16", border: "none", borderRadius: 14, padding: "15px 28px", fontFamily: sans, fontSize: 16, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}>{label} <ChevronRight size={18} /></button>
   );
   return (
     <div style={{ background: C.bg, minHeight: "100dvh", fontFamily: sans, color: C.ink }}>
@@ -1089,7 +1175,10 @@ function LandingPage({ onStart }) {
           <Mark size={24} color={C.brass} />
           <span style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.pine, letterSpacing: "-0.01em" }}>Good Steward</span>
         </div>
-        <button onClick={onStart} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: sans, fontSize: 14, fontWeight: 600, color: C.pine }}>Sign in</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <button onClick={onTrust} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: sans, fontSize: 14, fontWeight: 600, color: C.muted }}>How it works</button>
+          <button onClick={start} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: sans, fontSize: 14, fontWeight: 600, color: C.pine }}>Sign in</button>
+        </div>
       </nav>
 
       <header style={{ background: `radial-gradient(120% 90% at 50% -10%, ${C.pineSoft} 0%, ${C.pine} 55%, #14271F 100%)`, color: "#F3EEE2", position: "relative", overflow: "hidden" }}>
@@ -1142,13 +1231,89 @@ function LandingPage({ onStart }) {
           <h2 style={{ fontFamily: serif, fontSize: "clamp(28px,4.5vw,44px)", fontWeight: 500, margin: "0 0 20px", letterSpacing: "-0.01em" }}>Begin stewarding.</h2>
           {cta("Open your account")}
           <p style={{ fontFamily: sans, fontSize: 12.5, color: "#9FB3A4", marginTop: 18 }}>Runs on a brokerage sandbox — no real money moves.</p>
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.12)", marginTop: 40, paddingTop: 34 }}>
+            <p style={{ fontFamily: sans, fontSize: 15, color: "#D9D2C2", margin: "0 auto 16px", maxWidth: 460, lineHeight: 1.55 }}>
+              Real money is still gated behind the compliance work. Leave your email and we'll write when it opens — no noise before then.
+            </p>
+            <WaitlistForm dark />
+          </div>
         </div>
       </section>
 
       <footer style={{ ...wrap, padding: "28px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}><Mark size={18} color={C.muted} /><span style={{ fontFamily: serif, fontSize: 15, fontWeight: 600, color: C.muted }}>Good Steward</span></div>
-        <span style={{ fontFamily: sans, fontSize: 12, color: C.muted }}>A stewardship layer for your money.</span>
+        <button onClick={onTrust} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: sans, fontSize: 12, color: C.muted, textDecoration: "underline" }}>How it works · what's real</button>
       </footer>
+    </div>
+  );
+}
+
+// The honest trust story. For a product whose whole premise is naming the residue
+// rather than hiding it, the trust page owns the limits out loud.
+function TrustPage({ onBack, onStart }) {
+  const wrap = { maxWidth: 820, margin: "0 auto", padding: "0 24px" };
+  const Block = ({ title, children }) => (
+    <section style={{ ...wrap, padding: "18px 24px 6px" }}>
+      <h2 style={{ fontFamily: serif, fontSize: "clamp(22px,3.4vw,28px)", fontWeight: 500, color: C.pine, margin: "0 0 12px", letterSpacing: "-0.01em" }}>{title}</h2>
+      {children}
+    </section>
+  );
+  const Item = ({ good, k, v }) => (
+    <div style={{ display: "flex", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.line}` }}>
+      <div style={{ width: 20, flexShrink: 0, color: good ? C.good : C.warn, fontWeight: 700, fontFamily: sans }}>{good ? "✓" : "◐"}</div>
+      <div>
+        <div style={{ fontFamily: sans, fontSize: 14.5, fontWeight: 600, color: C.ink }}>{k}</div>
+        <div style={{ fontFamily: sans, fontSize: 13.5, color: C.muted, lineHeight: 1.5, marginTop: 2 }}>{v}</div>
+      </div>
+    </div>
+  );
+  const p = { fontFamily: sans, fontSize: 15, lineHeight: 1.6, color: C.ink };
+  return (
+    <div style={{ background: C.bg, minHeight: "100dvh", fontFamily: sans, color: C.ink, paddingBottom: 60 }}>
+      <FontInjector />
+      <nav style={{ maxWidth: 820, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px" }}>
+        <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+          <ChevronLeft size={18} color={C.pine} /><span style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, color: C.pine }}>Good Steward</span>
+        </button>
+        <button onClick={onStart} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: sans, fontSize: 14, fontWeight: 600, color: C.pine }}>Open your account</button>
+      </nav>
+
+      <header style={{ ...wrap, padding: "clamp(28px,6vw,56px) 24px 20px" }}>
+        <p style={{ fontFamily: sans, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: C.brass, fontWeight: 700, marginBottom: 12 }}>How it works · what's real</p>
+        <h1 style={{ fontFamily: serif, fontSize: "clamp(30px,5vw,46px)", fontWeight: 500, color: C.pine, margin: 0, lineHeight: 1.08, letterSpacing: "-0.01em" }}>We'd rather tell you the limits than hide them.</h1>
+        <p style={{ ...p, marginTop: 16, color: C.muted }}>The whole idea here is naming the residue instead of pretending it away. It would be strange to be dishonest about the product itself. So here's exactly what happens, what's real, and what isn't yet.</p>
+      </header>
+
+      <Block title="How it works">
+        <p style={{ ...p, margin: 0 }}>You spend as you always do. Each purchase rounds up to the next dollar and the spare change collects in a clearing balance. When it reaches $5 it's swept and split across the ETFs of the moral framework you chose — and a slice of every sweep is held back and redirected to giving. Your statement shows all three at once: what you kept, what you invested, and what you gave.</p>
+      </Block>
+
+      <Block title="What's real">
+        <Item good k="Your account and login" v="Real email-and-password accounts with hashed passwords and sessions, stored in a real database that survives restarts." />
+        <Item good k="A real brokerage account" v="Onboarding opens a genuine Alpaca brokerage account in your name (in their sandbox) — the same API a live product would use." />
+        <Item good k="Real orders" v="Round-ups place real fractional ETF orders in that account, split by your framework's allocation. You can watch them land in Alpaca's dashboard." />
+        <Item good k="The round-up math" v="Integer-cent accounting with no floating-point drift, covered by a passing test suite." />
+        <Item good k="The redirected residue" v="The tithe is real money movement in the ledger, not a number on a screen — it accumulates as you use the app." />
+      </Block>
+
+      <Block title="What's simulated, honestly">
+        <Item k="No real money" v="Everything runs on Alpaca's sandbox. No real funds move, and the account holds play money. Going live is a compliance switch, not a code one." />
+        <Item k="The ESG figures" v="The 'market similarity' and 'companies excluded' numbers are modelled estimates, labelled as such in the app — not sourced from live fund-holdings data yet." />
+        <Item k="Funding speed" v="Sandbox account approval and funding settle on their own slow clock, so a brand-new account's first order can take a few minutes rather than seconds." />
+      </Block>
+
+      <Block title="The regulatory reality">
+        <p style={{ ...p, margin: "0 0 12px" }}>Real money is genuinely gated, and not by laziness. A round-up app that picks portfolios for you looks a lot like giving investment advice, which generally means registering as an investment adviser. The plan is to avoid that by taking no compensation from any source — no fees, no payment for order flow, no fund kickbacks — but that's a structure a securities lawyer has to bless before a dollar moves.</p>
+        <p style={{ ...p, margin: 0 }}>Separately, opening real brokerage accounts requires identity verification (KYC/AML) by law — that isn't optional, and it's why real launch waits on the compliance work rather than a deploy button.</p>
+      </Block>
+
+      <section style={{ ...wrap, padding: "34px 24px 10px", textAlign: "center" }}>
+        <p style={{ ...p, color: C.muted, marginBottom: 18 }}>You can try the whole thing now on the sandbox — real accounts, fake money — or leave your email for when real money opens.</p>
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 26 }}>
+          <button onClick={onStart} style={{ background: C.pine, color: "#F3EEE2", border: "none", borderRadius: 14, padding: "14px 26px", fontFamily: sans, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Try the sandbox</button>
+        </div>
+        <WaitlistForm />
+      </section>
     </div>
   );
 }

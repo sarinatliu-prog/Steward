@@ -24,7 +24,7 @@ const FILE = join(dirname(fileURLToPath(import.meta.url)), "..", "data", "db.jso
 const DATABASE_URL = process.env.DATABASE_URL;
 
 function empty() {
-  return { users: {}, byEmail: {}, sessions: {} };
+  return { users: {}, byEmail: {}, sessions: {}, waitlist: [], events: {} };
 }
 
 let db = empty();
@@ -170,6 +170,24 @@ export const getSession = (token) => (token ? db.sessions[token] || null : null)
 export function deleteSession(token) { delete db.sessions[token]; save(); }
 
 export const allUsers = () => Object.values(db.users);
+
+// ── Waitlist + funnel events ────────────────────────────────────────────────
+// Real money is gated behind compliance, so capture demand now and learn where
+// people drop. Deliberately lightweight — a list and a counter, no third party.
+export function addWaitlist(email) {
+  const e = String(email).toLowerCase().trim();
+  db.waitlist = db.waitlist || [];
+  const already = db.waitlist.some((w) => w.email === e);
+  if (!already) { db.waitlist.push({ email: e, at: Date.now() }); save(); }
+  return { added: !already, total: db.waitlist.length };
+}
+export function logEvent(name) {
+  db.events = db.events || {};
+  db.events[name] = (db.events[name] || 0) + 1;
+  save();
+}
+export const funnel = () => ({ ...(db.events || {}), waitlist: (db.waitlist || []).length });
+
 export const stats = () => ({
   users: Object.keys(db.users).length,
   sessions: Object.keys(db.sessions).length,

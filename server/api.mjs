@@ -85,6 +85,29 @@ const server = createServer(async (req, res) => {
     return sendJson(res, 200, { ok: true, alpaca: ALPACA, ...db.stats() });
   }
 
+  // ---- waitlist: capture demand while real money is gated behind compliance ----
+  if (req.method === "POST" && path === "/api/waitlist") {
+    const body = await readBody(req);
+    if (!body?.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) {
+      return sendJson(res, 400, { error: "Enter a valid email address." });
+    }
+    const r = db.addWaitlist(body.email);
+    return sendJson(res, 200, { ok: true, position: r.total });
+  }
+
+  // ---- funnel event (lightweight, name-only) ----
+  if (req.method === "POST" && path === "/api/event") {
+    const body = await readBody(req);
+    const allowed = ["landing_view", "cta_click", "signup", "onboarding_done", "first_purchase", "bank_linked", "waitlist_join", "share_open"];
+    if (body?.name && allowed.includes(body.name)) db.logEvent(body.name);
+    return sendJson(res, 200, { ok: true });
+  }
+
+  // ---- funnel counts (aggregate only — no emails/PII) ----
+  if (req.method === "GET" && path === "/api/funnel") {
+    return sendJson(res, 200, db.funnel());
+  }
+
   // ---- signup ----
   if (req.method === "POST" && path === "/api/signup") {
     const body = await readBody(req);

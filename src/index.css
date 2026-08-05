@@ -2,3 +2,21 @@
 html, body, #root { margin: 0; padding: 0; }
 html, body { height: 100%; }
 body { background: #F3EEE2; }
+
+/* Accessibility: a visible focus ring for keyboard users. !important so it beats the
+   inline `outline:none` on inputs. Mouse clicks don't trigger :focus-visible, so it
+   only shows during keyboard navigation. */
+:focus-visible {
+  outline: 2px solid #B48A4A !important;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Respect users who ask for less motion — the round-up/flow animations become instant. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
