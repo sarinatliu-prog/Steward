@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 import * as db from "./lib/db.js";
 import { hashPassword, verifyPassword, newToken, sessionFromCookie, sessionCookie, validateCredentials, validateProfile } from "./lib/auth.js";
-import { alpacaEnabled, createBrokerageAccount, fundIfActive, fundViaAch } from "./lib/account-service.js";
+import { alpacaEnabled, createBrokerageAccount, fundIfActive, fundViaAch, createCharityAccount, journalFirmTo } from "./lib/account-service.js";
 import { plaidEnabled, createLinkToken, exchangePublicToken, fetchTransactions } from "./lib/plaid.js";
 import { recordPurchase, retryPending, rebalance, summary } from "./lib/portfolio.js";
 import { FakeBroker, AlpacaBroker } from "./lib/broker.js";
@@ -54,7 +54,7 @@ function currentUser(req) {
   return session ? db.getUser(session.userId) : null;
 }
 const publicUser = (u) => ({
-  id: u.id, email: u.email, hasProfile: !!u.profile,
+  id: u.id, email: u.email, hasProfile: !!u.profile, emailVerified: !!u.emailVerified,
   accountLinked: !!u.alpacaAccountId,
   bankLinked: !!u.plaidAccess,
   plaidEnabled: plaidEnabled(),
@@ -101,6 +101,52 @@ function loginFailed(key) {
 }
 const loginOk = (key) => loginAttempts.delete(key);
 
+// ── The charitable account: "redirect the residue", for real ─────────────────
+// One designated sandbox account that tithes are journaled into. Resolved from env,
+// then persisted meta, else created once and remembered. The residue therefore
+// accumulates in Alpaca's books — visible in the Broker dashboard — not just ours.
+let charityId = process.env.ALPACA_CHARITY_ACCOUNT_ID || null;
+async function getCharityId() {
+  if (!ALPACA) return null;
+  if (charityId) return charityId;
+  const stored = db.getMeta("charityAccountId");
+  if (stored) { charityId = stored; return charityId; }
+  try {
+    const acct = await createCharityAccount();
+    db.setMeta("charityAccountId", acct.id);
+    charityId = acct.id;
+    console.log(`charity: created charitable account ${acct.id} (${acct.status})`);
+  } catch (e) {
+    captureError(e, "createCharityAccount");
+  }
+  return charityId;
+}
+
+// Route any queued residue to the charitable account. Real journal for Alpaca users;
+// instant simulated routing otherwise. Never throws — retried by the background loop.
+async function routeDonations(user) {
+  const pending = user.pendingDonationCents ?? 0;
+  if (pending <= 0) return false;
+  if (!usesAlpaca(user)) {
+    user.donationRoutedCents = (user.donationRoutedCents ?? 0) + pending;
+    user.pendingDonationCents = 0;
+    return true;
+  }
+  const charity = await getCharityId();
+  if (!charity) return false;
+  try {
+    const j = await journalFirmTo(charity, pending);
+    user.donationRoutedCents = (user.donationRoutedCents ?? 0) + pending;
+    user.pendingDonationCents = 0;
+    db.audit(user, "residue_routed", { cents: pending, journal: j.id, to: charity.slice(0, 8) });
+    return true;
+  } catch (e) {
+    // Common benign case: charity account still activating. The loop retries.
+    return false;
+  }
+}
+const charityShort = () => (charityId ? charityId.slice(0, 8) + "…" : null);
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 const server = createServer(async (req, res) => {
  try {
@@ -133,6 +179,55 @@ const server = createServer(async (req, res) => {
   // ---- funnel counts (aggregate only — no emails/PII) ----
   if (req.method === "GET" && path === "/api/funnel") {
     return sendJson(res, 200, db.funnel());
+  }
+
+  // ---- email verification: confirm link ----
+  if (req.method === "GET" && path === "/api/verify") {
+    const t = db.useToken(url.searchParams.get("token"), "verify");
+    if (t) {
+      const u = db.getUser(t.userId);
+      if (u) { u.emailVerified = true; db.saveUser(u); db.audit(u, "email_verified"); }
+      res.writeHead(302, { Location: "/?verified=1" });
+      return res.end();
+    }
+    res.writeHead(302, { Location: "/?verified=0" });
+    return res.end();
+  }
+
+  // ---- password reset: request a link ----
+  // Always answers the same way so it can't be used to probe which emails exist.
+  // Without an email provider (sandbox), the link is returned to the client only when
+  // ALLOW_DEV_MAIL_LINKS=1 — an explicit, documented demo switch — and always logged
+  // server-side. Wiring Postmark/SES later replaces the dev link with a real send.
+  if (req.method === "POST" && path === "/api/reset/request") {
+    const body = await readBody(req);
+    const email = String(body?.email || "").toLowerCase();
+    let devLink = null;
+    const u = db.getUserByEmail(email);
+    if (u) {
+      const token = db.createToken("reset", u.id, 30 * 60 * 1000); // 30 min
+      const link = `/?reset=${token}`;
+      console.log(`[mail:dev] password reset for ${email}: ${link}`);
+      db.audit(u, "password_reset_requested");
+      if (process.env.ALLOW_DEV_MAIL_LINKS === "1" || !process.env.DATABASE_URL) devLink = link;
+    }
+    return sendJson(res, 200, { ok: true, message: "If that address has an account, a reset link has been issued.", devLink });
+  }
+
+  // ---- password reset: set the new password ----
+  if (req.method === "POST" && path === "/api/reset") {
+    const body = await readBody(req);
+    if (!body?.password || body.password.length < 8) return sendJson(res, 400, { error: "Password must be at least 8 characters." });
+    const t = db.useToken(body.token, "reset");
+    if (!t) return sendJson(res, 400, { error: "That reset link is invalid or has expired. Request a new one." });
+    const u = db.getUser(t.userId);
+    if (!u) return sendJson(res, 400, { error: "Account not found." });
+    const { salt, passHash } = hashPassword(body.password);
+    u.salt = salt; u.passHash = passHash;
+    db.saveUser(u);
+    db.deleteUserSessions(u.id); // every existing session is signed out
+    db.audit(u, "password_reset");
+    return sendJson(res, 200, { ok: true, message: "Password updated. Sign in with your new password." });
   }
 
   // ---- signup ----
@@ -183,10 +278,19 @@ const server = createServer(async (req, res) => {
 
   // ===== everything below requires a session =====
   const authRoutes = ["/api/profile", "/api/portfolio", "/api/purchase", "/api/config",
-                      "/api/plaid/link-token", "/api/plaid/exchange", "/api/plaid/sync", "/api/audit"];
+                      "/api/plaid/link-token", "/api/plaid/exchange", "/api/plaid/sync", "/api/audit", "/api/verify/request"];
   if (authRoutes.includes(path)) {
     const user = currentUser(req);
     if (!user) return sendJson(res, 401, { error: "not signed in" });
+
+    // ---- email verification: request a link ----
+    if (req.method === "POST" && path === "/api/verify/request") {
+      const token = db.createToken("verify", user.id, 24 * 60 * 60 * 1000); // 24 h
+      const link = `/api/verify?token=${token}`;
+      console.log(`[mail:dev] verification for ${user.email}: ${link}`);
+      const devLink = (process.env.ALLOW_DEV_MAIL_LINKS === "1" || !process.env.DATABASE_URL) ? link : null;
+      return sendJson(res, 200, { ok: true, devLink });
+    }
 
     // ---- the user's own audit trail ----
     if (req.method === "GET" && path === "/api/audit") {
@@ -228,13 +332,13 @@ const server = createServer(async (req, res) => {
         account: user.alpacaAccountId ? { id: user.alpacaAccountId.slice(0, 8) + "…", status: accountStatus } : null,
         accountError,
         funding, // { method: "journal" | "ach", status } — journal is instant, ach takes 10–30 min
-        ...summary(user, { mode: modeFor(user), alpacaSnapshot: await snapshotFor(user) }),
+        ...summary(user, { mode: modeFor(user), charity: charityShort(), alpacaSnapshot: await snapshotFor(user) }),
       });
     }
 
     // ---- portfolio ----
     if (req.method === "GET" && path === "/api/portfolio") {
-      return sendJson(res, 200, summary(user, { mode: modeFor(user), alpacaSnapshot: await snapshotFor(user) }));
+      return sendJson(res, 200, summary(user, { mode: modeFor(user), charity: charityShort(), alpacaSnapshot: await snapshotFor(user) }));
     }
 
     // ---- add a (simulated) purchase ----
@@ -245,8 +349,9 @@ const server = createServer(async (req, res) => {
         : randomPurchase();
       const tx = await recordPurchase(user, p, brokerFor(user));
       if (tx.swept) db.audit(user, "sweep_invested", { swept: tx.swept, donated: tx.donated || 0 });
+      if (tx.donated) await routeDonations(user); // real journal to the charitable account
       db.saveUser(user);
-      return sendJson(res, 200, summary(user, { mode: modeFor(user), alpacaSnapshot: await snapshotFor(user) }));
+      return sendJson(res, 200, summary(user, { mode: modeFor(user), charity: charityShort(), alpacaSnapshot: await snapshotFor(user) }));
     }
 
     // ---- update config (framework / tithe / etc.) ----
@@ -259,7 +364,7 @@ const server = createServer(async (req, res) => {
         rebalance(user);
       }
       db.saveUser(user);
-      return sendJson(res, 200, summary(user, { mode: modeFor(user), alpacaSnapshot: await snapshotFor(user) }));
+      return sendJson(res, 200, summary(user, { mode: modeFor(user), charity: charityShort(), alpacaSnapshot: await snapshotFor(user) }));
     }
 
     // ---- Plaid: start bank linking (returns a temporary link token) ----
@@ -302,7 +407,7 @@ const server = createServer(async (req, res) => {
         }
         user.plaidCursor = cursor;
         db.saveUser(user);
-        return sendJson(res, 200, { synced: transactions.length, ...summary(user, { mode: modeFor(user), alpacaSnapshot: await snapshotFor(user) }) });
+        return sendJson(res, 200, { synced: transactions.length, ...summary(user, { mode: modeFor(user), charity: charityShort(), alpacaSnapshot: await snapshotFor(user) }) });
       } catch (e) {
         return sendJson(res, 502, { error: String(e.response?.data?.error_message || e.message).split("\n")[0] });
       }
@@ -373,6 +478,9 @@ if (ALPACA) {
               String(e.message).split("\n")[0]);
           }
         }
+      }
+      if ((user.pendingDonationCents ?? 0) > 0) {
+        if (await routeDonations(user)) changed = true;
       }
       if (user.pendingInvestCents > 0) {
         const before = user.pendingInvestCents;

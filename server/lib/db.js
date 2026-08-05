@@ -24,7 +24,7 @@ const FILE = join(dirname(fileURLToPath(import.meta.url)), "..", "data", "db.jso
 const DATABASE_URL = process.env.DATABASE_URL;
 
 function empty() {
-  return { users: {}, byEmail: {}, sessions: {}, waitlist: [], events: {} };
+  return { users: {}, byEmail: {}, sessions: {}, waitlist: [], events: {}, meta: {}, tokens: {} };
 }
 
 let db = empty();
@@ -191,6 +191,34 @@ export function audit(user, event, detail = {}) {
 }
 
 export const allUsers = () => Object.values(db.users);
+
+// ── App-level metadata (e.g. the charitable account id) ────────────────────
+export const getMeta = (k) => (db.meta || {})[k] ?? null;
+export function setMeta(k, v) { db.meta = db.meta || {}; db.meta[k] = v; save(); }
+
+// ── One-time tokens (email verification, password reset) ───────────────────
+// Random 256-bit, typed, expiring, single-use. Stored server-side only.
+import { randomBytes as _rb } from "node:crypto";
+export function createToken(type, userId, ttlMs) {
+  const token = _rb(32).toString("hex");
+  db.tokens = db.tokens || {};
+  db.tokens[token] = { type, userId, exp: Date.now() + ttlMs };
+  save();
+  return token;
+}
+export function useToken(token, type) {
+  const t = (db.tokens || {})[token];
+  if (!t || t.type !== type) return null;
+  delete db.tokens[token]; // single-use, burned even if expired
+  save();
+  if (Date.now() > t.exp) return null;
+  return t;
+}
+// Invalidate every session for a user (called after a password reset).
+export function deleteUserSessions(userId) {
+  for (const [tok, s] of Object.entries(db.sessions)) if (s.userId === userId) delete db.sessions[tok];
+  save();
+}
 
 // ── Waitlist + funnel events ────────────────────────────────────────────────
 // Real money is gated behind compliance, so capture demand now and learn where

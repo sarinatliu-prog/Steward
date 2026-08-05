@@ -30,14 +30,19 @@ the engineering side.
 - **Audit trail** — an append-only per-user log of the money- and security-relevant
   events (signup, login, account created, funding, sweeps, bank link), readable at
   `GET /api/audit`. A real launch needs this for support and disputes; it's here now.
+- **Email verification & password reset** — single-use, expiring, typed 256-bit
+  tokens; a reset invalidates every existing session for the account. No email
+  provider is wired (sandbox), so links are logged server-side and surfaced in the
+  UI only when `ALLOW_DEV_MAIL_LINKS=1` (an explicit demo switch) or in local dev.
+  Wiring Postmark/SES later replaces the dev link with a real send — a credential
+  change, not a rewrite.
 - **Least data on the client** — `/api/funnel` exposes only aggregate counts, never
   emails or PII; login failures are generic ("Wrong email or password").
 
 ## Known gaps (honest, with severity and the fix)
 | Gap | Severity | Fix |
 |---|---|---|
-| **No email verification** — accounts are usable before the address is confirmed. | Medium | Token + verify endpoint are a small add; wiring an email provider (Postmark/SES) is the remaining step — a credential change, not a rewrite. |
-| **No password reset** — no self-serve recovery. | Medium | Same token mechanism as verification; gated on the same email provider. |
+| **Reset/verify links have no email provider** — dev links gated by `ALLOW_DEV_MAIL_LINKS`. | Medium | Wire Postmark/SES; the token flow is already done. |
 | **Error monitoring is in-memory** — the buffer is lost on restart. | Low | Ship errors to Sentry/Datadog in production; the capture point already exists. |
 | **No CSRF tokens** — state-changing routes rely on the cookie. | Low | `SameSite=Lax` blocks the common cross-site cases; add per-form tokens before real money. |
 | **Signup reveals whether an email exists** (409). | Low | Accept the UX tradeoff or switch to a neutral "check your email" response. |

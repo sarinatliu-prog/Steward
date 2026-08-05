@@ -52,6 +52,10 @@ export async function recordPurchase(user, purchase, broker) {
     user.clearingCents = 0;
     const donation = Math.round((swept * (user.config.tithePct || 0)) / 100);
     user.donatedCents = (user.donatedCents ?? 0) + donation;
+    // Queue for the real journal to the charitable account (routed by the api layer;
+    // simulated brokers route instantly there). donatedCents = total ever set aside,
+    // donationRoutedCents = portion actually moved at the broker.
+    user.pendingDonationCents = (user.pendingDonationCents ?? 0) + donation;
     const toInvest = swept - donation;
     user.pendingInvestCents += toInvest;
     tx.swept = swept;
@@ -84,7 +88,7 @@ function buildGrowth(transactions) {
     .map((p) => ({ m: mon[new Date(p.ts).getMonth()], v: p.cum / 100 }));
 }
 
-export function summary(user, { mode, alpacaSnapshot } = {}) {
+export function summary(user, { mode, alpacaSnapshot, charity } = {}) {
   const monthStart = Date.now() - MONTH_MS;
   const monthTx = user.transactions.filter((t) => t.ts >= monthStart);
   const roundupsThisMonthCents = monthTx.reduce((s, t) => s + t.spare, 0);
@@ -106,6 +110,9 @@ export function summary(user, { mode, alpacaSnapshot } = {}) {
     portfolioValueCents,
     clearingBalanceCents: user.clearingCents,
     donatedCents: user.donatedCents ?? 0,
+    donationRoutedCents: user.donationRoutedCents ?? 0,
+    donationPendingCents: user.pendingDonationCents ?? 0,
+    charity: charity ?? null,
     roundupsThisMonthCents,
     annualDonationCents,
     ordersPlaced: user.orders.length,

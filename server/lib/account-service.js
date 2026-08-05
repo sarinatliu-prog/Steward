@@ -161,6 +161,53 @@ export async function fundAccount(accountId, amount = FUND_AMOUNT) {
   }
 }
 
+// ── The charitable account ("redirect the residue", for real) ───────────────
+// One designated sandbox brokerage account that tithes are journaled INTO, so the
+// redirected residue exists in Alpaca's books, not just ours. Journals only move
+// firm↔customer, so the route is firm → charity (in sandbox the firm is the source
+// of all cash anyway — user credits came from the same firm account).
+export async function createCharityAccount() {
+  const stamp = Date.now();
+  const req = requester();
+  const account = await req("POST", "/v1/accounts", {
+    contact: {
+      email_address: `steward.charity+${stamp}@example.com`,
+      phone_number: "5556667777",
+      street_address: ["1 Flourishing Way"],
+      city: "San Mateo", state: "CA", postal_code: "94401", country: "USA",
+    },
+    identity: {
+      given_name: "Steward", family_name: "Charitable",
+      date_of_birth: "1980-01-01",
+      tax_id: `${200 + (stamp % 700)}-${20 + (stamp % 70)}-${2000 + (stamp % 8000)}`,
+      tax_id_type: "USA_SSN",
+      country_of_citizenship: "USA", country_of_birth: "USA", country_of_tax_residence: "USA",
+      funding_source: ["employment_income"],
+    },
+    disclosures: {
+      is_control_person: false, is_affiliated_exchange_or_finra: false,
+      is_politically_exposed: false, immediate_family_exposed: false,
+    },
+    agreements: [{ agreement: "customer_agreement", signed_at: new Date().toISOString(), ip_address: "127.0.0.1" }],
+  });
+  return { id: account.id, accountNumber: account.account_number, status: account.status };
+}
+
+/** Journal cash from the firm account into any customer account (e.g. the charity). */
+export async function journalFirmTo(accountId, amountCents) {
+  const firm = await getFirmAccountId();
+  if (!firm) throw new Error("no firm account id (set ALPACA_FIRM_ACCOUNT_ID)");
+  const req = requester();
+  const j = await req("POST", "/v1/journals", {
+    from_account: firm,
+    to_account: accountId,
+    entry_type: "JNLC",
+    amount: (amountCents / 100).toFixed(2),
+    description: "Steward residue redirection (sandbox)",
+  });
+  return { status: j.status, id: j.id };
+}
+
 /** Current status of an account (e.g. SUBMITTED, ACTIVE). null on error. */
 export async function getAccountStatus(accountId) {
   try {

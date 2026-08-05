@@ -148,6 +148,16 @@ export default function GoodSteward() {
   const [creating, setCreating]         = useState(false);
   const [profileError, setProfileError] = useState("");
   const { user, setUser, signup, login, logout } = useAuth();
+  const [verifyLink, setVerifyLink] = useState(null);
+  const [verifyBusy, setVerifyBusy] = useState(false);
+  const justVerified = new URLSearchParams(window.location.search).get("verified") === "1";
+  const requestVerify = async () => {
+    if (verifyBusy) return;
+    setVerifyBusy(true);
+    const r = await fetch("/api/verify/request", { method: "POST" }).then(r => r.json()).catch(() => ({}));
+    setVerifyLink(r.devLink || "sent");
+    setVerifyBusy(false);
+  };
   const { data: live, addPurchase, setConfig, buying, syncBank } = useLiveData();
   const [linkToken, setLinkToken] = useState(null);
   const [syncing, setSyncing]     = useState(false);
@@ -395,6 +405,27 @@ export default function GoodSteward() {
       <FontInjector />
       <div style={{ flex:1, display:"flex", flexDirection:"column", background:C.bg, overflow:"hidden" }}>
         <div style={{ flex:1, overflowY:"auto", paddingBottom:8 }}>
+          {justVerified && (
+            <div style={{ margin:"10px 22px 0", padding:"10px 14px", background:C.pine + "12", borderRadius:12, fontFamily:sans, fontSize:12.5, color:C.pine }}>
+              ✓ Email verified. Thank you.
+            </div>
+          )}
+          {user && !user.emailVerified && !justVerified && (
+            <div style={{ margin:"10px 22px 0", padding:"10px 14px", background:"#B48A4A14", borderRadius:12, fontFamily:sans, fontSize:12.5, color:C.ink, display:"flex", flexWrap:"wrap", alignItems:"center", gap:8 }}>
+              <span>Verify your email to secure your account.</span>
+              {verifyLink === null && (
+                <button onClick={requestVerify} style={{ background:"none", border:"none", padding:0, cursor:"pointer", fontFamily:sans, fontSize:12.5, color:C.brass, textDecoration:"underline" }}>
+                  {verifyBusy ? "Sending…" : "Send verification link"}
+                </button>
+              )}
+              {verifyLink && verifyLink !== "sent" && (
+                <a href={verifyLink} style={{ fontFamily:sans, fontSize:12.5, color:C.brass, textDecoration:"underline" }}>
+                  Open verification link (shown here — demo has no email provider)
+                </a>
+              )}
+              {verifyLink === "sent" && <span style={{ color:C.muted }}>Link issued — check the server log.</span>}
+            </div>
+          )}
           {tab === "home"      && renderHome()}
           {tab === "portfolio" && renderPortfolio()}
           {tab === "impact"    && renderImpact()}
@@ -703,6 +734,9 @@ export default function GoodSteward() {
                 purity — so we say so rather than quietly implying these are audited numbers. */}
             <p style={{ fontFamily:sans, fontSize:11.5, color:C.stone, lineHeight:1.45, margin:"10px 0 0" }}>
               Similarity and exclusion counts are <b>illustrative estimates</b>, not audited fund data.
+              How we estimate them: modelled from each fund family's published screening categories
+              (what they exclude and how strictly), scaled by your chosen screen level — not computed
+              from live holdings. They indicate the kind and scale of screening, not a precise count.
               Your actual holdings and orders (below and in your statement) are real.
             </p>
           </Card>
@@ -851,6 +885,17 @@ export default function GoodSteward() {
               <p style={{ fontFamily:sans, fontSize:12, color:C.muted, lineHeight:1.5, margin:"8px 0 0" }}>
                 {live.config.tithePct}% of every $5 swept is held back from investment and routed to the residue — real, accumulating money, not just a percentage on a screen.
               </p>
+              {live.charity ? (
+                <p style={{ fontFamily:sans, fontSize:12, color:C.pine, lineHeight:1.5, margin:"6px 0 0" }}>
+                  {"$" + ((live.donationRoutedCents ?? 0) / 100).toFixed(2)} journaled to the designated charitable
+                  account <b>{live.charity}</b> at the broker{(live.donationPendingCents ?? 0) > 0 ? ` — $${(live.donationPendingCents / 100).toFixed(2)} on its way` : ""}.
+                </p>
+              ) : (
+                <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, margin:"6px 0 0" }}>
+                  In simulated mode the residue accrues in the app's ledger; with the brokerage
+                  connected it's journaled to a designated charitable account.
+                </p>
+              )}
             </Card>
           )}
 
@@ -1006,14 +1051,34 @@ function ProfileInput({ label, value, onChange, type = "text", placeholder }) {
 }
 
 function AuthScreen({ signup, login, onBack }) {
-  const [mode, setMode] = useState("signup");
+  // If the page was opened from a password-reset link (/?reset=TOKEN), start there.
+  const resetToken = new URLSearchParams(window.location.search).get("reset");
+  const [mode, setMode] = useState(resetToken ? "reset" : "signup"); // signup | login | forgot | reset
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [devLink, setDevLink] = useState(null);
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     if (busy) return;
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setNotice("");
+    if (mode === "forgot") {
+      const r = await fetch("/api/reset/request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.trim() }) }).then(r => r.json()).catch(() => ({}));
+      setNotice(r.message || "If that address has an account, a reset link has been issued.");
+      setDevLink(r.devLink || null);
+      setBusy(false);
+      return;
+    }
+    if (mode === "reset") {
+      const r = await fetch("/api/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: resetToken, password }) }).then(r => r.json()).catch(() => ({}));
+      if (r.ok) {
+        window.history.replaceState({}, "", "/"); // burn the token from the URL
+        setMode("login"); setPassword(""); setNotice(r.message);
+      } else setError(r.error || "Something went wrong.");
+      setBusy(false);
+      return;
+    }
     const { ok, error } = await (mode === "signup" ? signup : login)(email.trim(), password);
     if (!ok) { setError(error || "Something went wrong."); setBusy(false); }
     // on success the auth state updates and the app re-routes automatically
@@ -1029,18 +1094,37 @@ function AuthScreen({ signup, login, onBack }) {
             <span style={{ fontFamily:serif, fontSize:19, fontWeight:600, color:C.pine, letterSpacing:"-0.01em" }}>Good Steward</span>
           </div>
           <h1 style={{ fontFamily:serif, fontSize:30, fontWeight:500, color:C.pine, margin:0, letterSpacing:"-0.01em" }}>
-            {mode === "signup" ? "Create your account" : "Welcome back"}
+            {mode === "signup" ? "Create your account" : mode === "login" ? "Welcome back"
+              : mode === "forgot" ? "Reset your password" : "Choose a new password"}
           </h1>
           <div style={{ display:"grid", gap:10, marginTop:4 }}>
-            <ProfileInput label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
-            <ProfileInput label="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" />
+            {mode !== "reset" && <ProfileInput label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />}
+            {mode !== "forgot" && <ProfileInput label={mode === "reset" ? "New password" : "Password"} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" />}
           </div>
           {error && <div style={{ fontFamily:sans, fontSize:12.5, color:"#B0563F", background:"#B0563F14", padding:"9px 12px", borderRadius:10 }}>{error}</div>}
-          <Btn onClick={submit}>{busy ? "…" : mode === "signup" ? "Create account" : "Sign in"} <ChevronRight size={17} /></Btn>
-          <button onClick={() => { setMode(mode === "signup" ? "login" : "signup"); setError(""); }}
-            style={{ ...textLink, justifyContent:"center", alignSelf:"center" }}>
-            {mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account"}
-          </button>
+          {notice && <div style={{ fontFamily:sans, fontSize:12.5, color:C.pine, background:C.pine + "10", padding:"9px 12px", borderRadius:10 }}>{notice}</div>}
+          {devLink && (
+            <a href={devLink} style={{ fontFamily:sans, fontSize:12.5, color:C.brass, textDecoration:"underline" }}>
+              Open the reset link (shown here because this demo has no email provider)
+            </a>
+          )}
+          <Btn onClick={submit}>{busy ? "…" : mode === "signup" ? "Create account" : mode === "login" ? "Sign in" : mode === "forgot" ? "Send reset link" : "Set new password"} <ChevronRight size={17} /></Btn>
+          {(mode === "signup" || mode === "login") && (
+            <button onClick={() => { setMode(mode === "signup" ? "login" : "signup"); setError(""); setNotice(""); }}
+              style={{ ...textLink, justifyContent:"center", alignSelf:"center" }}>
+              {mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account"}
+            </button>
+          )}
+          {mode === "login" && (
+            <button onClick={() => { setMode("forgot"); setError(""); setNotice(""); }} style={{ ...textLink, justifyContent:"center", alignSelf:"center" }}>
+              Forgot your password?
+            </button>
+          )}
+          {(mode === "forgot" || mode === "reset") && (
+            <button onClick={() => { setMode("login"); setError(""); setNotice(""); setDevLink(null); }} style={{ ...textLink, justifyContent:"center", alignSelf:"center" }}>
+              Back to sign in
+            </button>
+          )}
         </div>
       </div>
     </Frame>
