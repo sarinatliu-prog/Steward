@@ -20,6 +20,7 @@ import { recordPurchase, retryPending, rebalance, summary } from "./lib/portfoli
 import { FakeBroker, AlpacaBroker } from "./lib/broker.js";
 import { authFromEnv, makeRequester } from "./lib/alpaca-auth.js";
 import { randomPurchase } from "./lib/feed.js";
+import { mailerEnabled, siteUrl, sendMail, resetEmail, verifyEmail } from "./lib/mailer.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8787;
@@ -206,12 +207,18 @@ const server = createServer(async (req, res) => {
     const u = db.getUserByEmail(email);
     if (u) {
       const token = db.createToken("reset", u.id, 30 * 60 * 1000); // 30 min
-      const link = `/?reset=${token}`;
+      const link = `${siteUrl()}/?reset=${token}`;
       console.log(`[mail:dev] password reset for ${email}: ${link}`);
       db.audit(u, "password_reset_requested");
-      if (process.env.ALLOW_DEV_MAIL_LINKS === "1" || !process.env.DATABASE_URL) devLink = link;
+      if (mailerEnabled()) await sendMail({ to: u.email, ...resetEmail(link) });
+      // Surface the link on-screen only in dev / when explicitly allowed — and never
+      // when real email is configured (the email is the delivery channel then).
+      if (!mailerEnabled() && (process.env.ALLOW_DEV_MAIL_LINKS === "1" || !process.env.DATABASE_URL)) devLink = link;
     }
-    return sendJson(res, 200, { ok: true, message: "If that address has an account, a reset link has been issued.", devLink });
+    const message = mailerEnabled()
+      ? "If that address has an account, we've emailed a reset link. Check your inbox."
+      : "If that address has an account, a reset link has been issued.";
+    return sendJson(res, 200, { ok: true, message, devLink });
   }
 
   // ---- password reset: set the new password ----
@@ -286,10 +293,11 @@ const server = createServer(async (req, res) => {
     // ---- email verification: request a link ----
     if (req.method === "POST" && path === "/api/verify/request") {
       const token = db.createToken("verify", user.id, 24 * 60 * 60 * 1000); // 24 h
-      const link = `/api/verify?token=${token}`;
+      const link = `${siteUrl()}/api/verify?token=${token}`;
       console.log(`[mail:dev] verification for ${user.email}: ${link}`);
-      const devLink = (process.env.ALLOW_DEV_MAIL_LINKS === "1" || !process.env.DATABASE_URL) ? link : null;
-      return sendJson(res, 200, { ok: true, devLink });
+      if (mailerEnabled()) await sendMail({ to: user.email, ...verifyEmail(link) });
+      const devLink = (!mailerEnabled() && (process.env.ALLOW_DEV_MAIL_LINKS === "1" || !process.env.DATABASE_URL)) ? link : null;
+      return sendJson(res, 200, { ok: true, emailed: mailerEnabled(), devLink });
     }
 
     // ---- the user's own audit trail ----

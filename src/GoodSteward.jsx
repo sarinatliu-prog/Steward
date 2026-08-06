@@ -170,7 +170,7 @@ export default function GoodSteward() {
     if (verifyBusy) return;
     setVerifyBusy(true);
     const r = await fetch("/api/verify/request", { method: "POST" }).then(r => r.json()).catch(() => ({}));
-    setVerifyLink(r.devLink || "sent");
+    setVerifyLink(r.devLink || (r.emailed ? "emailed" : "sent"));
     setVerifyBusy(false);
   };
   const { data: live, addPurchase, setConfig, buying, syncBank } = useLiveData();
@@ -431,11 +431,12 @@ export default function GoodSteward() {
               {verifyBusy ? "Sending…" : "Send verification link"}
             </button>
           )}
-          {verifyLink && verifyLink !== "sent" && (
+          {verifyLink && verifyLink !== "sent" && verifyLink !== "emailed" && (
             <a href={verifyLink} style={{ fontFamily:sans, fontSize:12.5, color:C.brass, textDecoration:"underline" }}>
               Open verification link (shown here — demo has no email provider)
             </a>
           )}
+          {verifyLink === "emailed" && <span style={{ color:C.pine }}>✓ Verification link sent — check your inbox.</span>}
           {verifyLink === "sent" && <span style={{ color:C.muted }}>Link issued — check the server log.</span>}
         </div>
       )}
