@@ -52,3 +52,14 @@ services:
         value: https://authx.sandbox.alpaca.markets
       - key: ALPACA_BASE_URL
         value: https://broker-api.sandbox.alpaca.markets
+
+      # ── Plaid (real bank-transaction feed) ──────────────────────────────────
+      # Get sandbox keys at https://dashboard.plaid.com → Developers → Keys, then
+      # paste them into Render's Environment tab (sync:false keeps them out of git).
+      # Without these, the app keeps using the manual "Make a purchase" button.
+      - key: PLAID_CLIENT_ID
+        sync: false
+      - key: PLAID_SECRET
+        sync: false
+      - key: PLAID_ENV
+        value: sandbox
