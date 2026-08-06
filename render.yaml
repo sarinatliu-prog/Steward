@@ -53,6 +53,19 @@ services:
       - key: ALPACA_BASE_URL
         value: https://broker-api.sandbox.alpaca.markets
 
+      # ── Email (real password-reset + verification emails via Resend) ────────
+      # Get a free key at https://resend.com → API Keys, then paste it into
+      # Render's Environment tab (sync:false keeps it out of git). Without it,
+      # the app falls back to logging the link instead of emailing it.
+      - key: RESEND_API_KEY
+        sync: false
+      # Optional. Defaults to Resend's shared "onboarding@resend.dev" sender,
+      # which only delivers to your own Resend account email. To email anyone,
+      # verify a domain in Resend and set this to a sender on it, e.g.
+      # "Good Steward <hello@yourdomain.com>".
+      - key: MAIL_FROM
+        sync: false
+
       # ── Plaid (real bank-transaction feed) ──────────────────────────────────
       # Get sandbox keys at https://dashboard.plaid.com → Developers → Keys, then
       # paste them into Render's Environment tab (sync:false keeps them out of git).
