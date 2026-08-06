@@ -79,6 +79,20 @@ const AUDIT_LABEL = {
   config_changed: "Framework updated",
 };
 
+// True on desktop-width viewports, so the app can present a real web layout
+// (top nav, wide content) instead of a phone-shaped column.
+function useIsDesktop() {
+  const q = "(min-width: 900px)";
+  const [d, setD] = useState(() => typeof window !== "undefined" && window.matchMedia(q).matches);
+  useEffect(() => {
+    const m = window.matchMedia(q);
+    const on = () => setD(m.matches);
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return d;
+}
+
 // Lightweight funnel tracking — fire-and-forget, aggregate counts only, no PII.
 const track = (name) => {
   try {
@@ -148,6 +162,7 @@ export default function GoodSteward() {
   const [creating, setCreating]         = useState(false);
   const [profileError, setProfileError] = useState("");
   const { user, setUser, signup, login, logout } = useAuth();
+  const isDesktop = useIsDesktop();
   const [verifyLink, setVerifyLink] = useState(null);
   const [verifyBusy, setVerifyBusy] = useState(false);
   const justVerified = new URLSearchParams(window.location.search).get("verified") === "1";
@@ -382,6 +397,7 @@ export default function GoodSteward() {
             <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
               {step > 0 && <button onClick={() => setStep(step-1)} aria-label="Go back a step" style={iconBtn}><ChevronLeft size={18} color={C.pine} /></button>}
               <Dots n={steps.length} active={step} />
+              <button onClick={logout} style={{ background:"none", border:"none", cursor:"pointer", fontFamily:sans, fontSize:12.5, fontWeight:600, color:C.muted, flexShrink:0 }}>Sign out</button>
             </div>
           </div>
           <div style={{ flex:1, overflowY:"scroll", overflowX:"hidden", padding:"0 22px 20px", WebkitOverflowScrolling:"touch" }}>
@@ -400,36 +416,76 @@ export default function GoodSteward() {
   }
 
   /* ── MAIN APP ── */
+  const verifyBanner = (
+    <>
+      {justVerified && (
+        <div style={{ margin:"10px 22px 0", padding:"10px 14px", background:C.pine + "12", borderRadius:12, fontFamily:sans, fontSize:12.5, color:C.pine }}>
+          ✓ Email verified. Thank you.
+        </div>
+      )}
+      {user && !user.emailVerified && !justVerified && (
+        <div style={{ margin:"10px 22px 0", padding:"10px 14px", background:"#B48A4A14", borderRadius:12, fontFamily:sans, fontSize:12.5, color:C.ink, display:"flex", flexWrap:"wrap", alignItems:"center", gap:8 }}>
+          <span>Verify your email to secure your account.</span>
+          {verifyLink === null && (
+            <button onClick={requestVerify} style={{ background:"none", border:"none", padding:0, cursor:"pointer", fontFamily:sans, fontSize:12.5, color:C.brass, textDecoration:"underline" }}>
+              {verifyBusy ? "Sending…" : "Send verification link"}
+            </button>
+          )}
+          {verifyLink && verifyLink !== "sent" && (
+            <a href={verifyLink} style={{ fontFamily:sans, fontSize:12.5, color:C.brass, textDecoration:"underline" }}>
+              Open verification link (shown here — demo has no email provider)
+            </a>
+          )}
+          {verifyLink === "sent" && <span style={{ color:C.muted }}>Link issued — check the server log.</span>}
+        </div>
+      )}
+    </>
+  );
+  const tabBody = (
+    <>
+      {tab === "home"      && renderHome()}
+      {tab === "portfolio" && renderPortfolio()}
+      {tab === "impact"    && renderImpact()}
+      {tab === "report"    && renderReport()}
+    </>
+  );
+
+  // Desktop: a real web layout — top navigation, wide content, page scroll.
+  if (isDesktop) {
+    const nav = [
+      { k:"home", label:"Home", icon:Scale }, { k:"portfolio", label:"Portfolio", icon:Wallet },
+      { k:"impact", label:"Impact", icon:HeartHandshake }, { k:"report", label:"Statement", icon:Receipt },
+    ];
+    return (
+      <div style={{ minHeight:"100dvh", background:C.bg, fontFamily:sans }}>
+        <FontInjector />
+        <header style={{ position:"sticky", top:0, zIndex:10, background:"#F3EEE2f2", backdropFilter:"blur(8px)", borderBottom:`1px solid ${C.line}` }}>
+          <div style={{ maxWidth:920, margin:"0 auto", padding:"13px 24px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:16 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}><Mark size={22} color={C.brass} /><span style={{ fontFamily:serif, fontSize:19, fontWeight:600, color:C.pine, letterSpacing:"-0.01em" }}>Good Steward</span></div>
+            <nav style={{ display:"flex", alignItems:"center", gap:2 }}>
+              {nav.map(n => { const Icon = n.icon; const on = tab === n.k; return (
+                <button key={n.k} onClick={() => setTab(n.k)} style={{ background:on?C.pine+"10":"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:7, padding:"8px 13px", borderRadius:10, fontFamily:sans, fontSize:14, fontWeight:on?700:600, color:on?C.pine:C.muted }}><Icon size={16} color={on?C.pine:C.muted} strokeWidth={on?2.1:1.7} />{n.label}</button>
+              ); })}
+            </nav>
+            <button onClick={logout} style={{ background:"none", border:"none", cursor:"pointer", fontFamily:sans, fontSize:13.5, fontWeight:600, color:C.muted }}>Sign out</button>
+          </div>
+        </header>
+        <main style={{ maxWidth:680, margin:"0 auto", padding:"14px 0 90px" }}>
+          {verifyBanner}
+          {tabBody}
+        </main>
+      </div>
+    );
+  }
+
+  // Mobile: the single-column app with a bottom tab bar.
   return (
     <Frame>
       <FontInjector />
       <div style={{ flex:1, display:"flex", flexDirection:"column", background:C.bg, overflow:"hidden" }}>
         <div style={{ flex:1, overflowY:"auto", paddingBottom:8 }}>
-          {justVerified && (
-            <div style={{ margin:"10px 22px 0", padding:"10px 14px", background:C.pine + "12", borderRadius:12, fontFamily:sans, fontSize:12.5, color:C.pine }}>
-              ✓ Email verified. Thank you.
-            </div>
-          )}
-          {user && !user.emailVerified && !justVerified && (
-            <div style={{ margin:"10px 22px 0", padding:"10px 14px", background:"#B48A4A14", borderRadius:12, fontFamily:sans, fontSize:12.5, color:C.ink, display:"flex", flexWrap:"wrap", alignItems:"center", gap:8 }}>
-              <span>Verify your email to secure your account.</span>
-              {verifyLink === null && (
-                <button onClick={requestVerify} style={{ background:"none", border:"none", padding:0, cursor:"pointer", fontFamily:sans, fontSize:12.5, color:C.brass, textDecoration:"underline" }}>
-                  {verifyBusy ? "Sending…" : "Send verification link"}
-                </button>
-              )}
-              {verifyLink && verifyLink !== "sent" && (
-                <a href={verifyLink} style={{ fontFamily:sans, fontSize:12.5, color:C.brass, textDecoration:"underline" }}>
-                  Open verification link (shown here — demo has no email provider)
-                </a>
-              )}
-              {verifyLink === "sent" && <span style={{ color:C.muted }}>Link issued — check the server log.</span>}
-            </div>
-          )}
-          {tab === "home"      && renderHome()}
-          {tab === "portfolio" && renderPortfolio()}
-          {tab === "impact"    && renderImpact()}
-          {tab === "report"    && renderReport()}
+          {verifyBanner}
+          {tabBody}
         </div>
         <TabBar tab={tab} setTab={setTab} />
       </div>
@@ -1434,6 +1490,18 @@ function TrustPage({ onBack, onStart }) {
 }
 
 function Frame({ children }) {
+  const isDesktop = useIsDesktop();
+  // Desktop: a centered card, so sign-in / onboarding read as a web page, not a
+  // tall phone strip. Mobile: fill the viewport as a single column.
+  if (isDesktop) {
+    return (
+      <div style={{ minHeight:"100dvh", width:"100%", display:"flex", justifyContent:"center", alignItems:"center", background:C.bg, fontFamily:sans, padding:"36px 20px" }}>
+        <div style={{ width:"100%", maxWidth:480, maxHeight:"88vh", background:C.bg, display:"flex", flexDirection:"column", position:"relative", overflow:"hidden", borderRadius:24, border:`1px solid ${C.line}`, boxShadow:"0 30px 80px -34px rgba(20,39,31,0.42)" }}>
+          {children}
+        </div>
+      </div>
+    );
+  }
   return (
     <div style={{ minHeight:"100dvh", width:"100%", display:"flex", justifyContent:"center", background:C.bg, fontFamily:sans }}>
       <div style={{ width:"100%", maxWidth:520, height:"100dvh", background:C.bg, display:"flex", flexDirection:"column", position:"relative", overflow:"hidden", boxShadow:"0 0 80px -40px rgba(20,39,31,0.25)" }}>
