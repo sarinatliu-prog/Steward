@@ -163,6 +163,34 @@ export default function GoodSteward() {
   const [profileError, setProfileError] = useState("");
   const { user, setUser, signup, login, logout } = useAuth();
   const isDesktop = useIsDesktop();
+  // Client-side routing for the logged-out marketing site, so every tab has its own
+  // URL you can deep-link to and refresh on. A password-reset link (/?reset=…) lands
+  // straight on the sign-in view. The server already serves index.html for unknown
+  // paths, so a hard refresh on /how-it-works works too.
+  const [route, setRoute] = useState(() => {
+    if (typeof window === "undefined") return "/";
+    if (new URLSearchParams(window.location.search).get("reset")) return "/signin";
+    return window.location.pathname;
+  });
+  const navigate = (path) => {
+    if (typeof window !== "undefined") {
+      if (path !== window.location.pathname) window.history.pushState({}, "", path);
+      window.scrollTo(0, 0);
+    }
+    setRoute(path);
+  };
+  useEffect(() => {
+    const onPop = () => setRoute(window.location.pathname);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  // Once signed in, drop the /signin URL so the address bar isn't stale.
+  useEffect(() => {
+    if (user && typeof window !== "undefined" && window.location.pathname === "/signin") {
+      window.history.replaceState({}, "", "/");
+      setRoute("/");
+    }
+  }, [user]);
   const [verifyLink, setVerifyLink] = useState(null);
   const [verifyBusy, setVerifyBusy] = useState(false);
   const justVerified = new URLSearchParams(window.location.search).get("verified") === "1";
@@ -236,7 +264,7 @@ export default function GoodSteward() {
       if (res.ok) { track("onboarding_done"); setUser(u => ({ ...u, hasProfile: true })); } // → stage effect moves to app
       else setProfileError(data.error || "Couldn't open your account. Please check your details.");
     } catch {
-      setProfileError("Network error — please try again.");
+      setProfileError("Network error. Please try again.");
     } finally {
       setCreating(false);
     }
@@ -267,7 +295,7 @@ export default function GoodSteward() {
       ["Framework", fw.name],
       ["Stewardship rate", `${pct}%`],
     ];
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Good Steward — ${month} Statement</title>
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Good Steward · ${month} Statement</title>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Hanken+Grotesk:wght@400;500;600;700&display=swap');
         body{font-family:'Hanken Grotesk',system-ui,sans-serif;color:#1F1C16;background:#F3EEE2;margin:0;padding:48px}
@@ -284,7 +312,7 @@ export default function GoodSteward() {
       </style></head><body><div class="card">
       <div class="kick">Good Steward · ${month}</div>
       <h1>Wealth · Impact · Restoration</h1>
-      <div class="sub">${name} — a fuller account than "you made 8.2%."</div>
+      <div class="sub">${name}: a fuller account than "you made 8.2%."</div>
       ${rows.map(([k, v]) => `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("")}
       <div class="quote">"Stewardship: minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."</div>
       </div></body></html>`);
@@ -300,7 +328,7 @@ export default function GoodSteward() {
     track("share_open");
     const d = live ? live.display : {};
     const donated = d.donated ?? "$0.00", invested = d.invested ?? "$0.00";
-    const line = `This month with Good Steward I invested ${invested} of spare change by my values — and redirected ${donated} of the residue to giving.`;
+    const line = `This month with Good Steward I invested ${invested} of spare change by my values, and redirected ${donated} of the residue to giving.`;
     const url = window.location.origin;
     if (navigator.share) {
       try { await navigator.share({ title: "Good Steward", text: line, url }); return; } catch { /* cancelled — fall through */ }
@@ -323,7 +351,7 @@ export default function GoodSteward() {
         .foot{font-size:12.5px;color:#9FB3A4;display:flex;justify-content:space-between;align-items:center}
       </style></head><body><div class="card">
       <div><div class="kick">Good Steward · ${month}</div>
-      <div class="big">Spare change, invested by my values — and the residue given on purpose.</div></div>
+      <div class="big">Spare change, invested by my values, and the residue given on purpose.</div></div>
       <div class="row">
         <div class="stat"><div class="n">${invested}</div><div class="l">invested this month</div></div>
         <div class="stat"><div class="n brass">${donated}</div><div class="l">residue redirected</div></div>
@@ -373,16 +401,11 @@ export default function GoodSteward() {
     </Frame>
   );
 
-  /* ── AUTH (sign up / log in) ── */
-  if (!user && stage === "auth") return <AuthScreen signup={signup} login={login} onBack={() => setStage("landing")} />;
-
-  /* ── TRUST (how it works · what's real) ── */
-  if (!user && stage === "trust")
-    return <TrustPage onBack={() => setStage("landing")} onStart={() => setStage("auth")} />;
-
-  /* ── LANDING (the real marketing front door) ── */
-  if (!user && (stage === "landing" || stage === "welcome"))
-    return <LandingPage onStart={() => setStage("auth")} onTrust={() => setStage("trust")} />;
+  /* ── MARKETING + AUTH (logged out, driven by the URL) ── */
+  if (!user) {
+    if (route === "/signin") return <AuthScreen signup={signup} login={login} onBack={() => navigate("/")} />;
+    return <Marketing route={route} navigate={navigate} />;
+  }
 
   /* ── ONBOARDING ── */
   if (stage === "onboard") {
@@ -433,11 +456,11 @@ export default function GoodSteward() {
           )}
           {verifyLink && verifyLink !== "sent" && verifyLink !== "emailed" && (
             <a href={verifyLink} style={{ fontFamily:sans, fontSize:12.5, color:C.brass, textDecoration:"underline" }}>
-              Open verification link (shown here — demo has no email provider)
+              Open verification link (shown here; the demo has no email provider)
             </a>
           )}
-          {verifyLink === "emailed" && <span style={{ color:C.pine }}>✓ Verification link sent — check your inbox.</span>}
-          {verifyLink === "sent" && <span style={{ color:C.muted }}>Link issued — check the server log.</span>}
+          {verifyLink === "emailed" && <span style={{ color:C.pine }}>✓ Verification link sent. Check your inbox.</span>}
+          {verifyLink === "sent" && <span style={{ color:C.muted }}>Link issued. Check the server log.</span>}
         </div>
       )}
     </>
@@ -500,7 +523,7 @@ export default function GoodSteward() {
       <div>
         <Kicker>Step 1 · The basics</Kicker>
         <H2>How should we steward the funds?</H2>
-        <P>More stock means more growth and more swing; more bonds, the steadier ride. Nothing here is fixed — change it whenever.</P>
+        <P>More stock means more growth and more swing; more bonds, the steadier ride. Nothing here is fixed. Change it whenever.</P>
         <div style={{ marginTop:20, display:"grid", gap:10 }}>
           {[
             { k:"conservative", t:"Conservative", d:"Steadier, more bonds"       },
@@ -531,7 +554,7 @@ export default function GoodSteward() {
           </div>
           {showRoundupsInfo && (
             <div style={{ marginTop:10, padding:"10px 12px", background:C.brass+"15", borderRadius:10, fontFamily:sans, fontSize:12.5, color:C.ink, lineHeight:1.55 }}>
-              <b style={{ color:C.pine }}>Optional add-on.</b> Your monthly contribution is the core of the app — round-ups are just a bonus on top. Every purchase gets rounded up to the nearest dollar and the spare change is swept into your portfolio. e.g. a $3.60 coffee → 40¢ invested. Toggle off if you'd rather keep spending separate.
+              <b style={{ color:C.pine }}>Optional add-on.</b> Your monthly contribution is the core of the app; round-ups are just a bonus on top. Every purchase gets rounded up to the nearest dollar and the spare change is swept into your portfolio. e.g. a $3.60 coffee → 40¢ invested. Toggle off if you'd rather keep spending separate.
             </div>
           )}
         </div>
@@ -544,7 +567,7 @@ export default function GoodSteward() {
       <div>
         <Kicker>Step 2 · The marketplace</Kicker>
         <H2>Choose your moral frameworks</H2>
-        <P>Pick the tradition or values you invest by. Everything you hold gets measured against it — you can hold more than one.</P>
+        <P>Pick the tradition or values you invest by. Everything you hold gets measured against it, and you can hold more than one.</P>
         <div style={{ marginTop:18, display:"grid", gap:18 }}>
           {FW_GROUPS.map(grp => (
             <div key={grp.label}>
@@ -585,7 +608,7 @@ export default function GoodSteward() {
       <div>
         <Kicker>Step 3 · The screen</Kicker>
         <H2>How strict should the screen be?</H2>
-        <P>Stricter screens cut more harm — but drift slightly from the market. We show you the tradeoff honestly.</P>
+        <P>Stricter screens cut more harm, but drift slightly from the market. We show you the tradeoff honestly.</P>
         <div style={{ marginTop:18, display:"grid", gap:10 }}>
           {Object.entries(SCREENS).map(([k, v]) => {
             const on = screen === k;
@@ -719,7 +742,7 @@ export default function GoodSteward() {
                   </div>
                   {live.display.pending && (
                     <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, margin:"10px 0 0" }}>
-                      {live.display.pending} of round-ups is queued — your transfer is still settling. It invests automatically the moment the funds land.
+                      {live.display.pending} of round-ups is queued. Your transfer is still settling, and it invests automatically the moment the funds land.
                     </p>
                   )}
                 </>
@@ -727,7 +750,7 @@ export default function GoodSteward() {
                 <div style={{ marginTop:12, padding:"14px 15px", background:C.bg, border:`1px dashed ${C.line}`, borderRadius:12, textAlign:"center" }}>
                   <div style={{ fontFamily:serif, fontSize:17, color:C.pine, fontWeight:500 }}>Your account is ready.</div>
                   <div style={{ fontFamily:sans, fontSize:13, color:C.muted, lineHeight:1.5, marginTop:4 }}>
-                    Make your first purchase below — the spare change rounds up, and every $5 buys your {fw.name} ETFs.
+                    Make your first purchase below. The spare change rounds up, and every $5 buys your {fw.name} ETFs.
                   </div>
                 </div>
               )}
@@ -772,7 +795,7 @@ export default function GoodSteward() {
 
               <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.45, margin:"8px 0 0", textAlign:"center" }}>
                 {user?.bankLinked
-                  ? "Your bank is linked — Sync pulls real transactions into the round-up engine."
+                  ? "Your bank is linked. Sync pulls real transactions into the round-up engine."
                   : <>Simulates a card purchase. Spare change rounds up, and every $5 buys your
                      {" ETFs."}</>}
               </p>
@@ -792,7 +815,7 @@ export default function GoodSteward() {
             <p style={{ fontFamily:sans, fontSize:11.5, color:C.stone, lineHeight:1.45, margin:"10px 0 0" }}>
               Similarity and exclusion counts are <b>illustrative estimates</b>, not audited fund data.
               How we estimate them: modelled from each fund family's published screening categories
-              (what they exclude and how strictly), scaled by your chosen screen level — not computed
+              (what they exclude and how strictly), scaled by your chosen screen level, not computed
               from live holdings. They indicate the kind and scale of screening, not a precise count.
               Your actual holdings and orders (below and in your statement) are real.
             </p>
@@ -816,7 +839,7 @@ export default function GoodSteward() {
               </div>
             </div>
             <p style={{ fontFamily:sans, fontSize:12.5, color:C.muted, lineHeight:1.5, margin:"12px 0 0" }}>
-              No portfolio is clean. We show you the part that isn't rather than pretend it away — and the residue is what your giving, below, is for.
+              No portfolio is clean. We show you the part that isn't rather than pretend it away, and the residue is what your giving, below, is for.
             </p>
           </Card>
 
@@ -940,12 +963,12 @@ export default function GoodSteward() {
                 <span style={{ fontFamily:sans, fontSize:12.5, color:C.muted }}>diverted from your sweeps so far</span>
               </div>
               <p style={{ fontFamily:sans, fontSize:12, color:C.muted, lineHeight:1.5, margin:"8px 0 0" }}>
-                {live.config.tithePct}% of every $5 swept is held back from investment and routed to the residue — real, accumulating money, not just a percentage on a screen.
+                {live.config.tithePct}% of every $5 swept is held back from investment and routed to the residue. Real, accumulating money, not just a percentage on a screen.
               </p>
               {live.charity ? (
                 <p style={{ fontFamily:sans, fontSize:12, color:C.pine, lineHeight:1.5, margin:"6px 0 0" }}>
                   {"$" + ((live.donationRoutedCents ?? 0) / 100).toFixed(2)} journaled to the designated charitable
-                  account <b>{live.charity}</b> at the broker{(live.donationPendingCents ?? 0) > 0 ? ` — $${(live.donationPendingCents / 100).toFixed(2)} on its way` : ""}.
+                  account <b>{live.charity}</b> at the broker{(live.donationPendingCents ?? 0) > 0 ? `, $${(live.donationPendingCents / 100).toFixed(2)} on its way` : ""}.
                 </p>
               ) : (
                 <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, margin:"6px 0 0" }}>
@@ -1059,7 +1082,7 @@ export default function GoodSteward() {
             </div>
           </div>
           <Card>
-            <p style={{ fontFamily:serif, fontStyle:"italic", fontSize:15.5, color:C.pine, lineHeight:1.5, margin:0 }}>
+            <p style={{ fontFamily:sans, fontSize:15, fontWeight:500, color:C.pine, lineHeight:1.55, margin:0 }}>
               "Stewardship: minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."
           </p>
           </Card>
@@ -1304,7 +1327,7 @@ function WaitlistForm({ dark = false }) {
       const d = await r.json().catch(() => ({}));
       if (r.ok) { setState("done"); track("waitlist_join"); }
       else { setState("error"); setMsg(d.error || "Something went wrong."); }
-    } catch { setState("error"); setMsg("Network error — try again."); }
+    } catch { setState("error"); setMsg("Network error. Try again."); }
   };
   if (state === "done")
     return <p style={{ fontFamily: sans, fontSize: 15, fontWeight: 600, color: dark ? C.brassSoft : C.pine, textAlign: "center", margin: 0 }}>You're on the list. We'll write the day we open.</p>;
@@ -1319,13 +1342,80 @@ function WaitlistForm({ dark = false }) {
   );
 }
 
-// Full-width marketing landing page — the front door a stranger hits first. Not the
-// app in a phone frame: a real page that states the philosophy, shows the product,
-// and has one clear call to action.
-function LandingPage({ onStart, onTrust }) {
+// The logged-out marketing site. Three tabs, each with its own URL you can deep-link
+// and refresh on: / (home), /how-it-works, /trust. A shared top nav switches between
+// them without a full page reload.
+function MarketingNav({ route, navigate }) {
+  const tabs = [
+    { path: "/", label: "Home" },
+    { path: "/how-it-works", label: "How it works" },
+    { path: "/trust", label: "What's real" },
+  ];
+  const go = (p) => (e) => { if (e) e.preventDefault(); navigate(p); };
+  const link = (on) => ({ background: "none", border: "none", cursor: "pointer", fontFamily: sans, fontSize: 14, fontWeight: 600, color: on ? C.pine : C.muted, textDecoration: "none", paddingBottom: 3, borderBottom: on ? `2px solid ${C.brass}` : "2px solid transparent" });
+  return (
+    <nav style={{ position: "sticky", top: 0, zIndex: 20, background: "#F3EEE2f2", backdropFilter: "blur(8px)", borderBottom: `1px solid ${C.line}` }}>
+      <div style={{ maxWidth: 1080, margin: "0 auto", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+        <a href="/" onClick={go("/")} style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
+          <Mark size={24} color={C.brass} />
+          <span style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.pine, letterSpacing: "-0.01em" }}>Good Steward</span>
+        </a>
+        <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+          {tabs.map((t) => (
+            <a key={t.path} href={t.path} onClick={go(t.path)} style={link(route === t.path)}>{t.label}</a>
+          ))}
+          <a href="/signin" onClick={go("/signin")} style={{ background: C.pine, color: "#F3EEE2", textDecoration: "none", borderRadius: 11, padding: "9px 18px", fontFamily: sans, fontSize: 14, fontWeight: 700 }}>Open your account</a>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+function MarketingFooter({ navigate }) {
+  const go = (p) => (e) => { if (e) e.preventDefault(); navigate(p); };
+  const foot = { fontFamily: sans, fontSize: 12.5, color: C.muted, textDecoration: "none" };
+  return (
+    <footer style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, borderTop: `1px solid ${C.line}` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}><Mark size={18} color={C.muted} /><span style={{ fontFamily: serif, fontSize: 15, fontWeight: 600, color: C.muted }}>Good Steward</span></div>
+      <div style={{ display: "flex", gap: 20 }}>
+        <a href="/how-it-works" onClick={go("/how-it-works")} style={foot}>How it works</a>
+        <a href="/trust" onClick={go("/trust")} style={foot}>What's real</a>
+      </div>
+    </footer>
+  );
+}
+
+// A reusable brass CTA button that jumps to sign-up.
+function OpenAccountButton({ navigate, label = "Open your account" }) {
+  return (
+    <button onClick={() => { track("cta_click"); navigate("/signin"); }} style={{ background: C.brass, color: "#1F1C16", border: "none", borderRadius: 14, padding: "15px 28px", fontFamily: sans, fontSize: 16, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}>{label} <ChevronRight size={18} /></button>
+  );
+}
+
+// Home: just the green front door and one clear action.
+function MarketingHome({ navigate }) {
   const wrap = { maxWidth: 1080, margin: "0 auto", padding: "0 24px" };
   useEffect(() => { track("landing_view"); }, []);
-  const start = () => { track("cta_click"); onStart(); };
+  return (
+    <header style={{ background: `radial-gradient(120% 90% at 50% -10%, ${C.pineSoft} 0%, ${C.pine} 55%, #14271F 100%)`, color: "#F3EEE2", position: "relative", overflow: "hidden", minHeight: "calc(100dvh - 62px)", display: "flex", alignItems: "center" }}>
+      <Grain />
+      <div style={{ ...wrap, position: "relative", zIndex: 1, textAlign: "center", padding: "clamp(56px,10vw,110px) 24px", width: "100%" }}>
+        <p style={{ fontFamily: sans, fontSize: 13, letterSpacing: "0.18em", textTransform: "uppercase", color: C.brassSoft, marginBottom: 22 }}>A stewardship layer for your money</p>
+        <h1 style={{ fontFamily: serif, fontWeight: 500, fontSize: "clamp(40px,7vw,74px)", lineHeight: 1.03, margin: 0, letterSpacing: "-0.02em" }}>Money is <span style={{ color: C.brassSoft }}>stored agency.</span></h1>
+        <p style={{ fontFamily: sans, fontSize: "clamp(16px,2vw,19px)", lineHeight: 1.55, color: "#D9D2C2", margin: "24px auto 0", maxWidth: 520 }}>Round up your spare change and invest it to reduce foreseeable harm.</p>
+        <div style={{ marginTop: 36, display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
+          <OpenAccountButton navigate={navigate} />
+          <button onClick={() => navigate("/how-it-works")} style={{ background: "rgba(255,255,255,0.08)", color: "#F3EEE2", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 14, padding: "15px 26px", fontFamily: sans, fontSize: 16, fontWeight: 600, cursor: "pointer" }}>See how it works</button>
+        </div>
+        <p style={{ fontFamily: sans, fontSize: 12.5, color: "#9FB3A4", marginTop: 18 }}>No claim of moral purity. Ethical investing is asymptotic.</p>
+      </div>
+    </header>
+  );
+}
+
+// How it works: the three steps, the framework marketplace, and the honest statement.
+function MarketingHowItWorks({ navigate }) {
+  const wrap = { maxWidth: 1080, margin: "0 auto", padding: "0 24px" };
   const Step = ({ icon: Icon, n, title, body }) => (
     <div style={{ flex: "1 1 260px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 18, padding: "26px 24px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1336,46 +1426,23 @@ function LandingPage({ onStart, onTrust }) {
       <p style={{ fontFamily: sans, fontSize: 14.5, lineHeight: 1.55, color: C.muted, margin: 0 }}>{body}</p>
     </div>
   );
-  const cta = (label) => (
-    <button onClick={start} style={{ background: C.brass, color: "#1F1C16", border: "none", borderRadius: 14, padding: "15px 28px", fontFamily: sans, fontSize: 16, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}>{label} <ChevronRight size={18} /></button>
-  );
   return (
-    <div style={{ background: C.bg, minHeight: "100dvh", fontFamily: sans, color: C.ink }}>
-      <FontInjector />
-      <nav style={{ ...wrap, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Mark size={24} color={C.brass} />
-          <span style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.pine, letterSpacing: "-0.01em" }}>Good Steward</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <button onClick={onTrust} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: sans, fontSize: 14, fontWeight: 600, color: C.muted }}>How it works</button>
-          <button onClick={start} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: sans, fontSize: 14, fontWeight: 600, color: C.pine }}>Sign in</button>
-        </div>
-      </nav>
+    <div>
+      <section style={{ ...wrap, padding: "clamp(44px,7vw,76px) 24px 0", textAlign: "center" }}>
+        <h1 style={{ fontFamily: serif, fontSize: "clamp(30px,5vw,48px)", fontWeight: 500, color: C.pine, margin: "0 0 10px", letterSpacing: "-0.01em" }}>How it works</h1>
+        <p style={{ fontFamily: sans, fontSize: 17, color: C.muted, maxWidth: 540, margin: "0 auto", lineHeight: 1.5 }}>Three steps. They run in the background while you spend as usual.</p>
+      </section>
 
-      <header style={{ background: `radial-gradient(120% 90% at 50% -10%, ${C.pineSoft} 0%, ${C.pine} 55%, #14271F 100%)`, color: "#F3EEE2", position: "relative", overflow: "hidden" }}>
-        <Grain />
-        <div style={{ ...wrap, position: "relative", zIndex: 1, textAlign: "center", padding: "clamp(56px,10vw,110px) 24px" }}>
-          <p style={{ fontFamily: sans, fontSize: 13, letterSpacing: "0.18em", textTransform: "uppercase", color: C.brassSoft, marginBottom: 22 }}>A stewardship layer for your money</p>
-          <h1 style={{ fontFamily: serif, fontWeight: 500, fontSize: "clamp(40px,7vw,74px)", lineHeight: 1.03, margin: 0, letterSpacing: "-0.02em" }}>Money is <em style={{ color: C.brassSoft, fontStyle: "italic" }}>stored agency.</em></h1>
-          <p style={{ fontFamily: sans, fontSize: "clamp(16px,2vw,19px)", lineHeight: 1.55, color: "#D9D2C2", margin: "24px auto 0", maxWidth: 560 }}>Round up your spare change and invest it to reduce foreseeable harm — by your own values — then redirect the unavoidable residue toward human flourishing.</p>
-          <div style={{ marginTop: 36 }}>{cta("Open your account")}</div>
-          <p style={{ fontFamily: sans, fontSize: 12.5, color: "#9FB3A4", marginTop: 18 }}>No claim of moral purity. Ethical investing is asymptotic.</p>
-        </div>
-      </header>
-
-      <section style={{ ...wrap, padding: "clamp(56px,8vw,90px) 24px" }}>
-        <h2 style={{ fontFamily: serif, fontSize: "clamp(28px,4vw,40px)", fontWeight: 500, color: C.pine, textAlign: "center", margin: "0 0 8px", letterSpacing: "-0.01em" }}>Three moves, quietly, in the background.</h2>
-        <p style={{ fontFamily: sans, fontSize: 16, color: C.muted, textAlign: "center", maxWidth: 560, margin: "0 auto 44px", lineHeight: 1.55 }}>You spend as you always do. Steward turns the remainder into a small, deliberate act.</p>
+      <section style={{ ...wrap, padding: "clamp(30px,5vw,52px) 24px" }}>
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-          <Step icon={Coins} n="01 · Round up" title="Spare change, gathered" body="Every purchase rounds up to the nearest dollar. A $3.60 coffee sets aside 40¢ — invisible to you, meaningful in aggregate." />
-          <Step icon={Scale} n="02 · Invest by your values" title="Your framework, your holdings" body="Choose a moral framework — from broad ESG to Christian, Jewish, or Islamic screens. Your round-ups buy the ETFs that fit it." />
-          <Step icon={HeartHandshake} n="03 · Redirect the residue" title="Answer what you can't avoid" body="Perfect purity is impossible. A share of every sweep is routed to human flourishing — the residue, given on purpose." />
+          <Step icon={Coins} n="01 · Round up" title="Spare change, gathered" body="Every purchase rounds up to the nearest dollar. A $3.60 coffee sets aside 40¢, invisible to you but meaningful in aggregate." />
+          <Step icon={Scale} n="02 · Invest by your values" title="Your framework, your holdings" body="Choose a moral framework, from broad ESG to Christian, Jewish, or Islamic screens. Your round-ups buy the ETFs that fit it." />
+          <Step icon={HeartHandshake} n="03 · Give what's left" title="Give what's left" body="No investment is perfectly clean. A set share of every $5 sweep goes to a cause you choose, so the part you can't screen out still does some good." />
         </div>
       </section>
 
       <section style={{ background: C.card, borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}` }}>
-        <div style={{ ...wrap, padding: "clamp(56px,8vw,90px) 24px" }}>
+        <div style={{ ...wrap, padding: "clamp(48px,7vw,80px) 24px" }}>
           <p style={{ fontFamily: sans, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: C.brass, fontWeight: 700, textAlign: "center", marginBottom: 10 }}>Invest by what you believe</p>
           <h2 style={{ fontFamily: serif, fontSize: "clamp(28px,4vw,40px)", fontWeight: 500, color: C.pine, textAlign: "center", margin: "0 0 40px", letterSpacing: "-0.01em" }}>A marketplace of moral frameworks.</h2>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
@@ -1389,40 +1456,35 @@ function LandingPage({ onStart, onTrust }) {
         </div>
       </section>
 
-      <section style={{ ...wrap, padding: "clamp(64px,9vw,110px) 24px", textAlign: "center", maxWidth: 820 }}>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}><Mark size={32} color={C.brass} /></div>
-        <blockquote style={{ fontFamily: serif, fontStyle: "italic", fontSize: "clamp(22px,3.4vw,32px)", lineHeight: 1.4, color: C.pine, margin: 0, letterSpacing: "-0.01em" }}>
+      <section style={{ ...wrap, padding: "clamp(56px,8vw,96px) 24px", textAlign: "center", maxWidth: 760 }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}><Mark size={30} color={C.brass} /></div>
+        <blockquote style={{ fontFamily: sans, fontSize: "clamp(19px,2.6vw,26px)", lineHeight: 1.5, fontWeight: 500, color: C.pine, margin: 0, letterSpacing: "-0.005em" }}>
           "Minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."
         </blockquote>
-        <p style={{ fontFamily: sans, fontSize: 15, color: C.muted, marginTop: 22, lineHeight: 1.6 }}>We name the residue rather than hide it. A monthly statement gives you a fuller account than "you made 8.2%" — wealth, impact, and restoration, side by side.</p>
+        <p style={{ fontFamily: sans, fontSize: 15.5, color: C.muted, marginTop: 22, lineHeight: 1.6 }}>Your monthly statement shows more than a return. It puts three numbers side by side: what you kept, what you invested, and what you gave.</p>
       </section>
 
       <section style={{ background: C.pine, color: "#F3EEE2", position: "relative", overflow: "hidden" }}>
         <Grain />
         <div style={{ ...wrap, position: "relative", zIndex: 1, textAlign: "center", padding: "clamp(56px,8vw,88px) 24px" }}>
           <h2 style={{ fontFamily: serif, fontSize: "clamp(28px,4.5vw,44px)", fontWeight: 500, margin: "0 0 20px", letterSpacing: "-0.01em" }}>Begin stewarding.</h2>
-          {cta("Open your account")}
-          <p style={{ fontFamily: sans, fontSize: 12.5, color: "#9FB3A4", marginTop: 18 }}>Free to try. No money leaves your pocket — <b style={{ fontWeight: 600 }}>see exactly how it works</b>.</p>
+          <OpenAccountButton navigate={navigate} />
+          <p style={{ fontFamily: sans, fontSize: 12.5, color: "#9FB3A4", marginTop: 18 }}>Free to try. No money leaves your pocket.</p>
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.12)", marginTop: 40, paddingTop: 34 }}>
             <p style={{ fontFamily: sans, fontSize: 15, color: "#D9D2C2", margin: "0 auto 16px", maxWidth: 460, lineHeight: 1.55 }}>
-              We're not open for deposits yet. Leave your email and we'll write the day we are — nothing before then.
+              We're not open for deposits yet. Leave your email and we'll write the day we are.
             </p>
             <WaitlistForm dark />
           </div>
         </div>
       </section>
-
-      <footer style={{ ...wrap, padding: "28px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}><Mark size={18} color={C.muted} /><span style={{ fontFamily: serif, fontSize: 15, fontWeight: 600, color: C.muted }}>Good Steward</span></div>
-        <button onClick={onTrust} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: sans, fontSize: 12, color: C.muted, textDecoration: "underline" }}>How it works · what's real</button>
-      </footer>
     </div>
   );
 }
 
-// The honest trust story. For a product whose whole premise is naming the residue
-// rather than hiding it, the trust page owns the limits out loud.
-function TrustPage({ onBack, onStart }) {
+// What's real: the honest account of what's built, what's simulated, and why real
+// money is gated.
+function MarketingTrust({ navigate }) {
   const wrap = { maxWidth: 820, margin: "0 auto", padding: "0 24px" };
   const Block = ({ title, children }) => (
     <section style={{ ...wrap, padding: "18px 24px 6px" }}>
@@ -1441,51 +1503,58 @@ function TrustPage({ onBack, onStart }) {
   );
   const p = { fontFamily: sans, fontSize: 15, lineHeight: 1.6, color: C.ink };
   return (
-    <div style={{ background: C.bg, minHeight: "100dvh", fontFamily: sans, color: C.ink, paddingBottom: 60 }}>
-      <FontInjector />
-      <nav style={{ maxWidth: 820, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px" }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
-          <ChevronLeft size={18} color={C.pine} /><span style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, color: C.pine }}>Good Steward</span>
-        </button>
-        <button onClick={onStart} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: sans, fontSize: 14, fontWeight: 600, color: C.pine }}>Open your account</button>
-      </nav>
-
+    <div style={{ paddingBottom: 40 }}>
       <header style={{ ...wrap, padding: "clamp(28px,6vw,56px) 24px 20px" }}>
-        <p style={{ fontFamily: sans, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: C.brass, fontWeight: 700, marginBottom: 12 }}>How it works · what's real</p>
+        <p style={{ fontFamily: sans, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: C.brass, fontWeight: 700, marginBottom: 12 }}>What's real, what's simulated</p>
         <h1 style={{ fontFamily: serif, fontSize: "clamp(30px,5vw,46px)", fontWeight: 500, color: C.pine, margin: 0, lineHeight: 1.08, letterSpacing: "-0.01em" }}>We'd rather tell you the limits than hide them.</h1>
         <p style={{ ...p, marginTop: 16, color: C.muted }}>The whole idea here is naming the residue instead of pretending it away. It would be strange to be dishonest about the product itself. So here's exactly what happens, what's real, and what isn't yet.</p>
       </header>
 
       <Block title="How it works">
-        <p style={{ ...p, margin: 0 }}>You spend as you always do. Each purchase rounds up to the next dollar and the spare change collects in a clearing balance. When it reaches $5 it's swept and split across the ETFs of the moral framework you chose — and a slice of every sweep is held back and redirected to giving. Your statement shows all three at once: what you kept, what you invested, and what you gave.</p>
+        <p style={{ ...p, margin: 0 }}>You spend as you always do. Each purchase rounds up to the next dollar and the spare change collects in a clearing balance. When it reaches $5 it's swept and split across the ETFs of the moral framework you chose, and a slice of every sweep is held back and redirected to giving. Your statement shows all three at once: what you kept, what you invested, and what you gave.</p>
       </Block>
 
       <Block title="What's real">
         <Item good k="Your account and login" v="Real email-and-password accounts with hashed passwords and sessions, stored in a real database that survives restarts." />
-        <Item good k="A real brokerage account" v="Onboarding opens a genuine brokerage account in your name through Alpaca — the same system a live product runs on." />
+        <Item good k="A real brokerage account" v="Onboarding opens a genuine brokerage account in your name through Alpaca, the same system a live product runs on." />
         <Item good k="Real orders" v="Round-ups place real fractional ETF orders in that account, split by your framework's allocation. You can watch them land in Alpaca's dashboard." />
         <Item good k="The round-up math" v="Integer-cent accounting with no floating-point drift, covered by a passing test suite." />
-        <Item good k="The redirected residue" v="The tithe is real money movement in the ledger, not a number on a screen — it accumulates as you use the app." />
+        <Item good k="The redirected residue" v="The tithe is real money movement in the ledger, not a number on a screen. It accumulates as you use the app." />
       </Block>
 
       <Block title="What isn't real yet">
         <Item k="The money isn't yours yet" v="Your account is funded with practice money, so nothing leaves your pocket and nothing can be lost. Everything else behaves exactly as it will on the day we open." />
-        <Item k="The ESG figures" v="The 'market similarity' and 'companies excluded' numbers are modelled estimates, labelled as such in the app — not sourced from live fund-holdings data yet." />
+        <Item k="The ESG figures" v="The 'market similarity' and 'companies excluded' numbers are modelled estimates, labelled as such in the app, not sourced from live fund-holdings data yet." />
         <Item k="Speed" v="A brand-new account takes a minute or two to be approved and funded, so your very first order may not appear instantly." />
       </Block>
 
       <Block title="Why you can't put real money in yet">
-        <p style={{ ...p, margin: "0 0 12px" }}>Choosing a portfolio on your behalf is, legally, advice — and giving advice about money is a regulated thing to do, for good reasons. We'd rather do that properly than quietly. So before we take a single real dollar, the structure gets reviewed by a securities lawyer.</p>
-        <p style={{ ...p, margin: 0 }}>Opening a real account also means verifying who you are, which the law requires and we wouldn't skip anyway. That's the work standing between today and opening day — not a missing button.</p>
+        <p style={{ ...p, margin: "0 0 12px" }}>Choosing a portfolio on your behalf is, legally, advice, and giving advice about money is a regulated thing to do, for good reasons. We'd rather do that properly than quietly. So before we take a single real dollar, the structure gets reviewed by a securities lawyer.</p>
+        <p style={{ ...p, margin: 0 }}>Opening a real account also means verifying who you are, which the law requires and we wouldn't skip anyway. That's the work standing between today and opening day, not a missing button.</p>
       </Block>
 
       <section style={{ ...wrap, padding: "34px 24px 10px", textAlign: "center" }}>
-        <p style={{ ...p, color: C.muted, marginBottom: 18 }}>Try the whole thing now, free — or leave your email and we'll write the day we open.</p>
+        <p style={{ ...p, color: C.muted, marginBottom: 18 }}>Try the whole thing now, free, or leave your email and we'll write the day we open.</p>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 26 }}>
-          <button onClick={onStart} style={{ background: C.pine, color: "#F3EEE2", border: "none", borderRadius: 14, padding: "14px 26px", fontFamily: sans, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Open your account</button>
+          <button onClick={() => { track("cta_click"); navigate("/signin"); }} style={{ background: C.pine, color: "#F3EEE2", border: "none", borderRadius: 14, padding: "14px 26px", fontFamily: sans, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Open your account</button>
         </div>
         <WaitlistForm />
       </section>
+    </div>
+  );
+}
+
+// The marketing shell: shared nav + the page for the current route + footer.
+function Marketing({ route, navigate }) {
+  const page = route === "/how-it-works" ? <MarketingHowItWorks navigate={navigate} />
+    : route === "/trust" ? <MarketingTrust navigate={navigate} />
+    : <MarketingHome navigate={navigate} />;
+  return (
+    <div style={{ background: C.bg, minHeight: "100dvh", fontFamily: sans, color: C.ink }}>
+      <FontInjector />
+      <MarketingNav route={route} navigate={navigate} />
+      {page}
+      {route !== "/" && <MarketingFooter navigate={navigate} />}
     </div>
   );
 }
