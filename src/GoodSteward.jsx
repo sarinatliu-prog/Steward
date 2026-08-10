@@ -998,7 +998,14 @@ export default function GoodSteward() {
           </div>
 
           <Card>
-            <Row icon={HeartHandshake} label="Stewardship rate" />
+            <Row icon={HeartHandshake} label="Stewardship rate" right={
+              <InfoDot on={showResidueInfo} onClick={() => setShowResidueInfo(v => !v)} label="What does the stewardship rate do?" accent={C.amber} />
+            } />
+            {showResidueInfo && (
+              <div style={{ marginTop:12, padding:"10px 12px", background:C.amber+"15", borderRadius:10, fontFamily:sans, fontSize:12.5, color:C.ink, lineHeight:1.55 }}>
+                <b style={{ color:C.amber }}>The residue</b> is the harm no screen can fully catch, even a strict fund still touches something you wouldn't choose. The stewardship rate is the slice of every $5 sweep held back and given away instead of invested. At {pct}%, that's {fmt2((pct/100)*5)} given and {fmt2(5-(pct/100)*5)} invested per sweep, automatically.
+              </div>
+            )}
             <input type="range" min={0} max={10} step={0.5} value={pct} onChange={e => setPct(+e.target.value)} style={{ width:"100%", accentColor:C.teal, marginTop:14 }} />
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginTop:4 }}>
               <span style={{ fontFamily:sans, fontSize:30, color:C.amber, fontWeight:700, letterSpacing:"-0.03em" }}>{pct}%</span>
