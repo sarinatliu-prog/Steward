@@ -92,6 +92,13 @@ const GROWTH = [
 ];
 
 const fmt = (n) => "$" + Math.round(n).toLocaleString("en-US");
+// Money to spec: always 2 decimals, thousands separators.
+const fmt2 = (n) => "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// The last `n` calendar months as short labels, oldest first (for time-series bars).
+const lastMonths = (n) => Array.from({ length: n }, (_, i) => {
+  const d = new Date(); d.setMonth(d.getMonth() - (n - 1 - i));
+  return d.toLocaleString("en-US", { month: "short" });
+});
 
 // Human labels for the audit-trail event names.
 const AUDIT_LABEL = {
@@ -422,7 +429,7 @@ export default function GoodSteward() {
     <Frame>
       <FontInjector />
       <div style={{ flex:1, display:"grid", placeItems:"center", background:C.pine }}>
-        <Mark size={34} color={C.brassSoft} />
+        <Mark size={34} color={C.mint} counter={C.pine} />
       </div>
     </Frame>
   );
@@ -886,33 +893,56 @@ export default function GoodSteward() {
   }
 
   function renderPortfolio() {
+    const kpis = [
+      { label:"Portfolio value", value: live ? live.display.portfolioValue : fmt(14820) },
+      { label:"Invested",        value: live ? live.display.invested : fmt(12100) },
+      { label:"Market similarity", value: `${derived.similarity}%` },
+      { label:"Given away",      value: live ? live.display.donated : fmt(240), accent:C.amber },
+    ];
     return (
       <div>
-        <Header title="Portfolio" sub={`${fw.name} · ${SCREENS[screen].label} screen`} />
+        <Header title="Holdings" sub={`${fw.name} · ${SCREENS[screen].label} screen`} />
         <div style={{ padding:"0 18px" }}>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+            {kpis.map(k => <KpiTile key={k.label} {...k} />)}
+          </div>
+
           <Card>
-            <Row icon={Wallet} label="Holdings" right={<InfoTag>{derived.similarity}% market</InfoTag>} />
-            <div style={{ marginTop:10, display:"grid", gap:12 }}>
-              {fw.holdings.map(h => {
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", paddingBottom:12, borderBottom:`1px solid ${C.divider}` }}>
+              <span style={{ fontFamily:sans, fontSize:14, fontWeight:700, color:C.ink }}>Funds</span>
+              <span style={{ fontFamily:sans, fontSize:11, color:C.muted, fontWeight:600, letterSpacing:"0.04em" }}>Target · Value · Return</span>
+            </div>
+            <div>
+              {fw.holdings.map((h,i) => {
                 const liveH = live && live.holdings ? live.holdings.find(x => x.symbol === h.t) : null;
                 return (
-                <div key={h.t}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
-                    <div>
-                      <span style={{ fontFamily:sans, fontWeight:700, fontSize:13.5, color:C.ink }}>{h.t}</span>
-                      <span style={{ fontFamily:sans, fontSize:12.5, color:C.muted, marginLeft:8 }}>{h.n}</span>
+                  <div key={h.t} style={{ display:"grid", gridTemplateColumns:"1fr 46px 66px 36px", gap:10, alignItems:"center", padding:"12px 0", borderBottom:i<fw.holdings.length-1?`1px solid ${C.divider}`:"none" }}>
+                    <div style={{ minWidth:0 }}>
+                      <div style={{ fontFamily:sans, fontWeight:700, fontSize:13.5, color:C.ink }}>{h.t}</div>
+                      <div style={{ fontFamily:sans, fontSize:11.5, color:C.muted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{h.n}</div>
                     </div>
-                    <div style={{ textAlign:"right" }}>
-                      {liveH && <span style={{ fontFamily:sans, fontSize:13, fontWeight:600, color:C.pine }}>{liveH.investedDisplay}</span>}
-                      <span style={{ fontFamily:sans, fontSize:12, color:C.muted, marginLeft:liveH?8:0 }}>{h.a}%</span>
-                    </div>
+                    <div style={{ fontFamily:sans, fontSize:13, fontWeight:600, color:C.muted, textAlign:"right" }}>{h.a}%</div>
+                    <div style={{ fontFamily:sans, fontSize:13, fontWeight:700, color:C.ink, textAlign:"right" }}>{liveH ? liveH.investedDisplay : fmt(0)}</div>
+                    <div style={{ fontFamily:sans, fontSize:13, fontWeight:600, color:C.faint, textAlign:"right" }}>—</div>
                   </div>
-                  <div style={{ height:6, background:C.line, borderRadius:6, marginTop:5, overflow:"hidden" }}>
-                    <div style={{ width:`${h.a}%`, height:"100%", background:C.pineSoft, borderRadius:6 }} />
-                  </div>
-                </div>
-              );})}
+                );
+              })}
             </div>
+            <p style={{ fontFamily:sans, fontSize:11, color:C.faint, lineHeight:1.5, margin:"10px 0 0" }}>Per-fund returns aren't tracked in the sandbox yet. Target and value are real.</p>
+          </Card>
+
+          <Card>
+            <Row icon={Shield} label="Screen strictness" />
+            <Segmented options={Object.entries(SCREENS).map(([k,v]) => ({ k, label:v.label }))} value={screen} onChange={setScreen} />
+            <Meter label="Direct exposure removed" value={derived.reduction} color={C.teal} style={{ marginTop:14 }} />
+          </Card>
+
+          <Card>
+            <Row icon={Scale} label="Exposure" right={<InfoTag>estimate</InfoTag>} />
+            <div style={{ marginTop:14 }}>
+              <ExposureGrid residue={derived.residual} screenedLabel="removed by your screen" residueLabel="the residue" />
+            </div>
+            <p style={{ fontFamily:sans, fontSize:11.5, color:C.faint, lineHeight:1.5, margin:"12px 0 0" }}>Estimates modelled from published screens, not audited holdings.</p>
           </Card>
 
           <Card>
@@ -931,16 +961,6 @@ export default function GoodSteward() {
               ))}
             </div>
           </Card>
-
-          <Card>
-            <Row icon={Shield} label="Screen strictness" />
-            <div style={{ display:"flex", gap:8, marginTop:10 }}>
-              {Object.entries(SCREENS).map(([k,v]) => (
-                <button key={k} onClick={() => setScreen(k)} style={{ flex:1, ...chipBtn, borderColor:screen===k?C.teal:C.line, background:screen===k?C.teal:"transparent", color:screen===k?"#fff":C.ink }}>{v.label}</button>
-              ))}
-            </div>
-            <Meter label="Direct exposure removed" value={derived.reduction} color={C.good} style={{ marginTop:14 }} />
-          </Card>
           <div style={{ height:14 }} />
         </div>
       </div>
@@ -950,50 +970,43 @@ export default function GoodSteward() {
   function renderImpact() {
     const annualDonation = live ? live.annualDonationCents / 100 : derived.annualDonation;
     const split = annualDonation / CAUSES.length;
+    const givenToDate = live ? live.donatedCents / 100 : 0;
+    const mons = lastMonths(6);
+    const givingSeries = mons.map((m, i) => ({ m, v: (givenToDate || annualDonation / 12) * ((i + 1) / 6) }));
     return (
       <div>
-        <Header title="Impact" sub="Where the residue goes" />
+        <Header title="Giving" sub="The residue, redirected" />
         <div style={{ padding:"0 18px" }}>
+          <div style={{ background:C.pine, borderRadius:18, padding:"20px 22px", color:"#EAF2F0" }}>
+            <span style={{ fontFamily:sans, fontSize:12.5, fontWeight:600, color:"#8FB5AC" }}>Given to date</span>
+            <div style={{ marginTop:4 }}>
+              {live
+                ? <AnimatedMoney cents={live.donatedCents} style={{ fontFamily:sans, fontSize:38, fontWeight:700, letterSpacing:"-0.035em", color:C.amberDark }} />
+                : <span style={{ fontFamily:sans, fontSize:38, fontWeight:700, letterSpacing:"-0.035em", color:C.amberDark }}>{fmt(0)}</span>}
+            </div>
+            <div style={{ fontFamily:sans, fontSize:13, color:"#8FB5AC", marginTop:2 }}>held back from your sweeps and given away</div>
+            <div style={{ marginTop:16 }}>
+              <ExposureGrid cols={25} dark residue={derived.residual} screenedLabel="invested" residueLabel="given away" />
+            </div>
+          </div>
+
           <Card>
             <Row icon={HeartHandshake} label="Stewardship rate" />
-            <input type="range" min={0} max={10} step={0.5} value={pct} onChange={e => setPct(+e.target.value)} style={{ width:"100%", accentColor:C.pine, marginTop:12 }} />
+            <input type="range" min={0} max={10} step={0.5} value={pct} onChange={e => setPct(+e.target.value)} style={{ width:"100%", accentColor:C.teal, marginTop:14 }} />
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginTop:4 }}>
               <span style={{ fontFamily:sans, fontSize:30, color:C.amber, fontWeight:700, letterSpacing:"-0.03em" }}>{pct}%</span>
-              <span style={{ fontFamily:sans, fontSize:13, color:C.muted }}>≈ {fmt(annualDonation)}/yr</span>
+              <span style={{ fontFamily:sans, fontSize:13, color:C.muted }}>≈ {fmt(annualDonation)}/yr given away</span>
             </div>
-            <div style={{ display:"flex", gap:8, marginTop:12, flexWrap:"wrap" }}>
+            <div style={{ fontFamily:sans, fontSize:11.5, color:C.muted, fontWeight:600, margin:"14px 0 7px" }}>Applied to</div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
               {Object.entries(OFFSET_BASIS).map(([k,v]) => (
                 <button key={k} onClick={() => setBasis(k)} style={{ ...chipBtn, fontSize:11.5, borderColor:basis===k?C.teal:C.line, background:basis===k?C.teal:"transparent", color:basis===k?"#fff":C.ink }}>{v.label}</button>
               ))}
             </div>
           </Card>
 
-          {live && (
-            <Card>
-              <Row icon={HeartHandshake} label="Given away" right={<InfoTag>real</InfoTag>} />
-              <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", marginTop:8 }}>
-                <AnimatedMoney cents={live.donatedCents} style={{ fontFamily:sans, fontSize:34, fontWeight:700, color:C.amber, letterSpacing:"-0.035em" }} />
-                <span style={{ fontFamily:sans, fontSize:12.5, color:C.muted }}>diverted from your sweeps so far</span>
-              </div>
-              <p style={{ fontFamily:sans, fontSize:12, color:C.muted, lineHeight:1.5, margin:"8px 0 0" }}>
-                {live.config.tithePct}% of every $5 swept is held back from investment and routed to the residue. Real, accumulating money, not just a percentage on a screen.
-              </p>
-              {live.charity ? (
-                <p style={{ fontFamily:sans, fontSize:12, color:C.pine, lineHeight:1.5, margin:"6px 0 0" }}>
-                  {"$" + ((live.donationRoutedCents ?? 0) / 100).toFixed(2)} journaled to the designated charitable
-                  account <b>{live.charity}</b> at the broker{(live.donationPendingCents ?? 0) > 0 ? `, $${(live.donationPendingCents / 100).toFixed(2)} on its way` : ""}.
-                </p>
-              ) : (
-                <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, margin:"6px 0 0" }}>
-                  Your residue is accumulating. Once your brokerage account is active it's
-                  transferred to a dedicated giving account.
-                </p>
-              )}
-            </Card>
-          )}
-
           <Card>
-            <Row icon={Coins} label="Routed to flourishing" />
+            <Row icon={Coins} label="Cause split" />
             <div style={{ marginTop:10, display:"grid", gap:10 }}>
               {CAUSES.map(c => {
                 const Icon = c.icon;
@@ -1012,8 +1025,8 @@ export default function GoodSteward() {
               })}
               {derived.hasFaith && (
                 <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-                  <div style={{ width:36, height:36, borderRadius:10, background:C.brass+"22", display:"grid", placeItems:"center", flexShrink:0 }}>
-                    <Landmark size={17} color={C.brass} strokeWidth={1.8} />
+                  <div style={{ width:36, height:36, borderRadius:10, background:C.teal+"22", display:"grid", placeItems:"center", flexShrink:0 }}>
+                    <Landmark size={17} color={C.teal} strokeWidth={1.8} />
                   </div>
                   <div style={{ flex:1 }}>
                     <div style={{ fontFamily:sans, fontSize:13.5, fontWeight:600, color:C.ink }}>Faith community</div>
@@ -1023,40 +1036,18 @@ export default function GoodSteward() {
                 </div>
               )}
             </div>
+            {live && (
+              <p style={{ fontFamily:sans, fontSize:11.5, color:C.faint, lineHeight:1.5, margin:"12px 0 0" }}>
+                {live.charity
+                  ? <>{"$" + ((live.donationRoutedCents ?? 0) / 100).toFixed(2)} journaled to the giving account <b>{live.charity}</b>{(live.donationPendingCents ?? 0) > 0 ? `, $${(live.donationPendingCents / 100).toFixed(2)} on its way` : ""}.</>
+                  : "Your residue is accumulating. Once your brokerage account is active it's transferred to a dedicated giving account."}
+              </p>
+            )}
           </Card>
 
           <Card>
-            <Row icon={PiggyBank} label="Round-ups this month" right={
-              live ? <InfoTag>live</InfoTag> : null
-            } />
-            {live ? (
-              <>
-                <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", marginTop:8 }}>
-                  <span style={{ fontFamily:sans, fontSize:28, fontWeight:700, color:C.ink, letterSpacing:"-0.03em" }}>{live.display.roundupsThisMonth}</span>
-                  <span style={{ fontFamily:sans, fontSize:12.5, color:C.muted }}>{live.display.clearing} in clearing → {live.etf}</span>
-                </div>
-                <div style={{ display:"flex", justifyContent:"space-between", marginTop:12, fontFamily:sans, fontSize:13, flexWrap:"wrap", gap:8 }}>
-                  {live.byCategory.slice(0,4).map(c => (
-                    <div key={c.category} style={{ textAlign:"center", flex:1 }}>
-                      <div style={{ color:C.muted, fontSize:11.5 }}>{c.category}</div>
-                      <div style={{ color:C.pine, fontWeight:600 }}>{c.display}</div>
-                    </div>
-                  ))}
-                </div>
-                <button onClick={addPurchase} style={{ ...textLink, marginTop:12 }}>
-                  Simulate a purchase <ChevronRight size={14} />
-                </button>
-              </>
-            ) : (
-              <div style={{ display:"flex", justifyContent:"space-between", marginTop:10, fontFamily:sans, fontSize:13 }}>
-                {[["Coffee","$0.75"],["Books","$0.40"],["Transit","$0.10"],["Groceries","$0.62"]].map(([a,b]) => (
-                  <div key={a} style={{ textAlign:"center" }}>
-                    <div style={{ color:C.muted, fontSize:11.5 }}>{a}</div>
-                    <div style={{ color:C.pine, fontWeight:600 }}>{b}</div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <Row icon={TrendingUp} label="Giving over time" right={<InfoTag>illustrative</InfoTag>} />
+            <MiniBars data={givingSeries} />
           </Card>
           <div style={{ height:14 }} />
         </div>
@@ -1065,64 +1056,86 @@ export default function GoodSteward() {
   }
 
   function renderReport() {
-    const annualDonation = live ? live.annualDonationCents / 100 : derived.annualDonation;
-    const rows = [
-      ["Invested to date",   live ? live.display.invested : fmt(contribution * 12), true ],
-      ["Rounded up this month", live ? live.display.roundupsThisMonth : "+"+fmt(298), false],
-      ["In clearing account", live ? live.display.clearing : fmt(0),  false],
-      ["Donations routed",   fmt(annualDonation / 12),           true ],
-      ["Companies screened", String(derived.excluded),           false],
-      ["Direct harm reduced",SCREENS[screen].label+" · "+derived.reduction+"%", false],
-      ["Stewardship Score",  String(derived.score),              true ],
+    const month = new Date().toLocaleString("en-US", { month: "long", year: "numeric" });
+    const closing  = live ? live.portfolioValueCents / 100 : 14820;
+    const invested = live ? live.investedCents / 100 : 12100;
+    const given    = live ? (live.donatedCents ?? 0) / 100 : 240;
+    const change   = +(closing - invested).toFixed(2); // portion not explained by contributions (illustrative)
+    const recon = [
+      ["Opening value",           fmt2(0),                                      C.ink,  false],
+      ["Invested via round-ups",  "+" + fmt2(invested),                         C.teal, false],
+      ["Market change",           (change >= 0 ? "+" : "−") + fmt2(Math.abs(change)), change >= 0 ? C.teal : C.err, false],
+      ["Given away",              "−" + fmt2(given),                            C.amber, false],
+      ["Closing value",           fmt2(closing),                                C.ink,  true],
     ];
     return (
       <div>
-        <Header title="Statement" sub="June · Monthly Stewardship Report" />
+        <Header title="Statement" sub={`${month} · monthly report`} />
         <div style={{ padding:"0 18px" }}>
-          <div style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:20, padding:22 }}>
-            <div style={{ textAlign:"center", borderBottom:`1px solid ${C.line}`, paddingBottom:16 }}>
-              <div style={{ display:"flex", justifyContent:"center" }}><Mark size={26} color={C.brass} /></div>
-              <div style={{ fontFamily:sans, fontSize:20, color:C.ink, fontWeight:700, marginTop:6, letterSpacing:"-0.03em" }}>Wealth · Impact · Restoration</div>
-              <div style={{ fontFamily:sans, fontSize:12, color:C.muted, marginTop:2 }}>Not "you made 8.2%." A fuller account.</div>
-            </div>
-            <div style={{ marginTop:8 }}>
-              {rows.map(([k,v,hl],i) => (
-                <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"13px 0", borderBottom:i<rows.length-1?`1px solid ${C.line}`:"none" }}>
-                  <span style={{ fontFamily:sans, fontSize:13.5, color:C.muted }}>{k}</span>
-                  <span style={{ fontFamily:hl?serif:sans, fontSize:hl?19:14.5, fontWeight:600, color:hl?C.pine:C.ink }}>{v}</span>
+          <div style={{ background:C.pine, borderRadius:18, padding:"20px 22px", color:"#EAF2F0" }}>
+            <span style={{ fontFamily:sans, fontSize:12.5, fontWeight:600, color:"#8FB5AC" }}>Closing value</span>
+            <div style={{ fontFamily:sans, fontSize:38, fontWeight:700, marginTop:4, letterSpacing:"-0.035em" }}>{fmt2(closing)}</div>
+            <div style={{ fontFamily:sans, fontSize:13, color:C.mint, marginTop:2 }}>a fuller account than "you made 8.2%"</div>
+          </div>
+
+          <Card>
+            <Row icon={Receipt} label="Opening to closing" />
+            <div style={{ marginTop:6 }}>
+              {recon.map(([k,v,col,strong],i) => (
+                <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"11px 0", borderTop:strong?`1px solid ${C.line}`:"none", borderBottom:(i<recon.length-1&&!strong)?`1px solid ${C.divider}`:"none" }}>
+                  <span style={{ fontFamily:sans, fontSize:13.5, color:strong?C.ink:C.muted, fontWeight:strong?700:400 }}>{k}</span>
+                  <span style={{ fontFamily:sans, fontSize:strong?17:14, fontWeight:700, color:col, letterSpacing:"-0.02em" }}>{v}</span>
                 </div>
               ))}
             </div>
-          </div>
-          <Card>
-            <p style={{ fontFamily:sans, fontSize:15, fontWeight:500, color:C.pine, lineHeight:1.55, margin:0 }}>
-              "Stewardship: minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."
-          </p>
           </Card>
+
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginTop:14 }}>
+            <TriTile label="Wealth" value={fmt2(closing)} sub="portfolio" />
+            <TriTile label="Impact" value={`${derived.reduction}%`} sub="harm removed" />
+            <TriTile label="Restoration" value={fmt2(given)} accent={C.amber} sub="given away" />
+          </div>
+
+          <Card>
+            <Row icon={Receipt} label="Past statements" />
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 0 0" }}>
+              <span style={{ fontFamily:sans, fontSize:13.5, color:C.ink, fontWeight:600 }}>{month}</span>
+              <span style={chip}>current</span>
+            </div>
+            <p style={{ fontFamily:sans, fontSize:11.5, color:C.faint, margin:"10px 0 0", lineHeight:1.5 }}>Prior months appear here as they close.</p>
+          </Card>
+
           {activity.length > 0 && (
             <Card>
-              <Row icon={Receipt} label="Account activity" right={<InfoTag>audit trail</InfoTag>} />
+              <Row icon={Shield} label="Account activity" right={<InfoTag>audit trail</InfoTag>} />
               <div style={{ marginTop:10, display:"grid", gap:2 }}>
                 {activity.slice(0, 6).map((e, i) => (
-                  <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", padding:"7px 0", borderBottom:i<Math.min(6,activity.length)-1?`1px solid ${C.line}`:"none" }}>
+                  <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", padding:"8px 0", borderBottom:i<Math.min(6,activity.length)-1?`1px solid ${C.divider}`:"none" }}>
                     <span style={{ fontFamily:sans, fontSize:13, color:C.ink }}>{AUDIT_LABEL[e.event] || e.event.replace(/_/g," ")}</span>
-                    <span style={{ fontFamily:sans, fontSize:11.5, color:C.muted }}>{new Date(e.ts).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}</span>
+                    <span style={{ fontFamily:sans, fontSize:11.5, color:C.faint }}>{new Date(e.ts).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}</span>
                   </div>
                 ))}
               </div>
             </Card>
           )}
+
+          <Card>
+            <p style={{ fontFamily:sans, fontSize:14, fontWeight:500, color:C.ink, lineHeight:1.6, margin:0 }}>
+              "Stewardship: minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."
+            </p>
+          </Card>
+
           <div style={{ display:"flex", gap:10, marginTop:14 }}>
-            <button onClick={shareStatement} style={{ flex:1, padding:"13px 16px", background:C.pine, color:"#fff", border:"none", borderRadius:12, cursor:"pointer", fontFamily:sans, fontSize:14.5, fontWeight:600, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+            <button onClick={shareStatement} style={{ flex:1, padding:"14px 16px", background:C.teal, color:"#fff", border:"none", borderRadius:11, cursor:"pointer", fontFamily:sans, fontSize:13.5, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
               <HeartHandshake size={16} /> Share this month
             </button>
-            <button onClick={printStatement} style={{ flex:1, padding:"13px 16px", background:"transparent", color:C.pine, border:`1px solid ${C.pine}`, borderRadius:12, cursor:"pointer", fontFamily:sans, fontSize:14.5, fontWeight:600, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+            <button onClick={printStatement} style={{ flex:1, padding:"14px 16px", background:"transparent", color:C.teal, border:`1px solid ${C.teal}`, borderRadius:11, cursor:"pointer", fontFamily:sans, fontSize:13.5, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
               <Receipt size={16} /> Save PDF
             </button>
           </div>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:16, padding:"0 4px" }}>
             <span style={{ fontFamily:sans, fontSize:12, color:C.muted }}>{user?.email}</span>
-            <button onClick={logout} style={{ ...textLink, color:"#B0563F" }}>Sign out</button>
+            <button onClick={logout} style={{ ...textLink, color:C.err }}>Sign out</button>
           </div>
           <div style={{ height:14 }} />
         </div>
@@ -1679,6 +1692,23 @@ function H2({ children })     { return <h2 style={{ fontFamily:sans, fontSize:22
 function P({ children })      { return <p style={{ fontFamily:sans, fontSize:13.5, fontWeight:500, color:C.muted, lineHeight:1.6, margin:"8px 0 0" }}>{children}</p>; }
 function InfoTag({ children }) { return <span style={{ fontFamily:sans, fontSize:10.5, letterSpacing:"0.08em", textTransform:"uppercase", color:C.muted, background:C.divider, padding:"3px 8px", borderRadius:20, fontWeight:700 }}>{children}</span>; }
 function LiveStat({ label, value, accent }) { return <div style={{ background:C.bg, border:`1px solid ${C.line}`, borderRadius:12, padding:"11px 13px" }}><div style={{ fontFamily:sans, fontSize:11, color:C.muted, fontWeight:500 }}>{label}</div><div style={{ fontFamily:sans, fontSize:20, fontWeight:700, color:accent ?? C.ink, marginTop:2, letterSpacing:"-0.03em" }}>{value}</div></div>; }
+// KPI tile for the 4-up hero row (Holdings). Stat is a big tabular figure.
+function KpiTile({ label, value, accent }) {
+  return <div style={{ background:C.bg, border:`1px solid ${C.line}`, borderRadius:12, padding:"12px 13px" }}><div style={{ fontFamily:sans, fontSize:11.5, color:C.muted, fontWeight:500 }}>{label}</div><div style={{ fontFamily:sans, fontSize:22, fontWeight:700, color:accent ?? C.ink, marginTop:3, letterSpacing:"-0.035em" }}>{value}</div></div>;
+}
+// The wealth / impact / restoration triptych on the statement.
+function TriTile({ label, value, sub, accent }) {
+  return <div style={{ background:C.bg, border:`1px solid ${C.line}`, borderRadius:12, padding:"14px 8px", textAlign:"center" }}><div style={{ fontFamily:sans, fontSize:10.5, color:C.muted, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em" }}>{label}</div><div style={{ fontFamily:sans, fontSize:18, fontWeight:700, color:accent ?? C.ink, marginTop:5, letterSpacing:"-0.03em" }}>{value}</div>{sub && <div style={{ fontFamily:sans, fontSize:10.5, color:C.faint, marginTop:2 }}>{sub}</div>}</div>;
+}
+// Segmented control: track with an active teal pill.
+function Segmented({ options, value, onChange }) {
+  return <div style={{ display:"flex", background:"#F3F1EB", borderRadius:11, padding:3, gap:3, marginTop:10 }}>{options.map(o => { const on = value === o.k; return <button key={o.k} onClick={() => onChange(o.k)} style={{ flex:1, border:"none", cursor:"pointer", borderRadius:9, padding:"9px 6px", background:on?C.teal:"transparent", color:on?"#fff":C.muted, fontFamily:sans, fontSize:13, fontWeight:on?700:600 }}>{o.label}</button>; })}</div>;
+}
+// Giving-over-time: short amber bars with month labels.
+function MiniBars({ data, color = C.amberChart }) {
+  const max = Math.max(...data.map(d => d.v), 1);
+  return <div style={{ display:"flex", alignItems:"flex-end", gap:6, height:76, marginTop:8 }}>{data.map((d, i) => <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:6 }}><div style={{ width:"100%", height:Math.max(3, (d.v / max) * 54), background:color, borderRadius:3 }} /><span style={{ fontFamily:sans, fontSize:10, color:C.faint }}>{d.m}</span></div>)}</div>;
+}
 
 const rowCard  = { display:"flex", alignItems:"center", gap:13, width:"100%", padding:"14px 15px", borderRadius:12, border:`1px solid ${C.line}`, background:C.card, cursor:"pointer" };
 const miniCard = { padding:"13px 12px", borderRadius:12, border:`1px solid ${C.line}`, background:C.card, cursor:"pointer", textAlign:"left" };
