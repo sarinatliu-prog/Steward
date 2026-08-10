@@ -190,6 +190,7 @@ export default function GoodSteward() {
   const [contribution, setContribution] = useState(500);
   const [roundups, setRoundups]         = useState(true);
   const [showRoundupsInfo, setShowRoundupsInfo] = useState(false);
+  const [showResidueInfo, setShowResidueInfo] = useState(false);
   const [profile, setProfile]           = useState({ firstName:"", lastName:"", dob:"", address:"", city:"", state:"", postal:"" });
   const [creating, setCreating]         = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -679,9 +680,15 @@ export default function GoodSteward() {
             </button>
           ))}
         </div>
-        <div style={{ marginTop:20, fontFamily:sans, fontSize:12.5, color:C.muted, marginBottom:10 }}>
-          Stewardship rate · suggested {derived.suggestedTithe}%
+        <div style={{ marginTop:20, display:"flex", alignItems:"center", gap:6, marginBottom:10 }}>
+          <span style={{ fontFamily:sans, fontSize:12.5, color:C.muted }}>Stewardship rate · suggested {derived.suggestedTithe}%</span>
+          <InfoDot on={showResidueInfo} onClick={() => setShowResidueInfo(v => !v)} label="What does the stewardship rate do?" accent={C.amber} />
         </div>
+        {showResidueInfo && (
+          <div style={{ marginBottom:14, padding:"10px 12px", background:C.amber+"15", borderRadius:10, fontFamily:sans, fontSize:12.5, color:C.ink, lineHeight:1.55 }}>
+            <b style={{ color:C.amber }}>The residue</b> is the harm no screen can fully catch, even a strict fund still touches something you wouldn't choose. The stewardship rate is the slice of every $5 sweep held back and given away instead of invested. At {pct}%, that's {fmt2((pct/100)*5)} given and {fmt2(5-(pct/100)*5)} invested per sweep, automatically.
+          </div>
+        )}
         <input type="range" min={0} max={10} step={0.5} value={pct} onChange={e => setPct(+e.target.value)} style={{ width:"100%", accentColor:C.pine }} />
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginTop:4 }}>
           <span style={{ fontFamily:sans, fontSize:30, color:C.amber, fontWeight:700, letterSpacing:"-0.03em" }}>{pct}%</span>
@@ -1701,6 +1708,15 @@ function Dots({ n, active }) {
   return <div style={{ display:"flex", gap:6, flex:1 }}>{Array.from({length:n}).map((_,i) => <div key={i} style={{ flex:1, height:4, borderRadius:4, background:i<=active?C.teal:C.line, transition:"background .3s" }} />)}</div>;
 }
 function Kicker({ children }) { return <div style={{ fontFamily:sans, fontSize:11.5, letterSpacing:"0.16em", textTransform:"uppercase", color:C.teal, fontWeight:700, marginTop:6 }}>{children}</div>; }
+// A small "i" toggle that reveals an inline explanation. `on` colors it active;
+// pass an accent (e.g. C.amber for residue-related copy) to match the topic.
+function InfoDot({ on, onClick, label, accent = C.teal }) {
+  return (
+    <button onClick={onClick} aria-label={label} style={{ background:"none", border:"none", cursor:"pointer", padding:0, display:"grid", placeItems:"center", flexShrink:0 }}>
+      <Info size={14} color={on ? accent : C.muted} />
+    </button>
+  );
+}
 function H2({ children })     { return <h2 style={{ fontFamily:sans, fontSize:22, fontWeight:700, color:C.ink, margin:"8px 0 0", lineHeight:1.15, letterSpacing:"-0.03em" }}>{children}</h2>; }
 function P({ children })      { return <p style={{ fontFamily:sans, fontSize:13.5, fontWeight:500, color:C.muted, lineHeight:1.6, margin:"8px 0 0" }}>{children}</p>; }
 function InfoTag({ children }) { return <span style={{ fontFamily:sans, fontSize:10.5, letterSpacing:"0.08em", textTransform:"uppercase", color:C.muted, background:C.divider, padding:"3px 8px", borderRadius:20, fontWeight:700 }}>{children}</span>; }
