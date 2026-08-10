@@ -7,13 +7,38 @@ import {
   Wallet, Receipt, Info, Leaf, BookOpen, Users, HeartHandshake, Landmark, Bird,
 } from "lucide-react";
 
+// Steward design system v1.0 — Manrope, teal / deep-green / amber.
+// Amber is load-bearing: it marks the residue (money withheld and given away) and
+// nothing else. Generic accents, active states and gains are teal.
 const C = {
-  bg: "#F3EEE2", card: "#FBF8F0", pine: "#1C3A2E", pineSoft: "#2C4F40",
-  brass: "#B48A4A", brassSoft: "#D8B877", ink: "#1F1C16", muted: "#7A7263",
-  line: "#E3DBC9", good: "#3E6B4F", warn: "#B07A3A",
+  bg: "#F7F5F1",        // page background
+  card: "#FFFFFF",      // default container
+  line: "#EBE7DF",      // card outline, 1px
+  divider: "#F6F4EF",   // rows inside cards
+  pine: "#0E3A33",      // deep green — hero surface, one per screen
+  pineSoft: "#12564C",  // lifted deep green (gradients only)
+  teal: "#0E7C6B",      // primary action, gains, active nav
+  tealHover: "#0A6659",
+  tealActive: "#085449",
+  tealTint: "#EAF2F0",  // selected state, active nav
+  mint: "#5FD3B0",      // positive figures on deep green
+  brass: "#0E7C6B",     // generic accent → teal (amber is residue-only)
+  brassSoft: "#5FD3B0", // on-dark accent → mint
+  amber: "#946A1E",     // residue ONLY
+  amberTint: "#FBF0DA", // residue badge / surface tint
+  amberDark: "#F4C97A", // residue figure on a deep-green surface
+  amberChart: "#D9A23D",// residue cells in the exposure grid
+  ink: "#1A1D1C",       // headings, key figures
+  muted: "#6E736F",     // body copy, labels
+  faint: "#8E938F",     // timestamps, captions, outflow
+  good: "#0E7C6B",      // gains
+  warn: "#B4530A",      // warnings
+  err:  "#C0392B",      // errors
 };
-const serif = "'Fraunces', Georgia, serif";
-const sans  = "'Hanken Grotesk', system-ui, sans-serif";
+// One typeface: Manrope. `serif` is kept as an alias so existing call sites that
+// used it for headings now render Manrope too (weight/size carry the hierarchy).
+const serif = "'Manrope', system-ui, sans-serif";
+const sans  = "'Manrope', system-ui, sans-serif";
 
 const FRAMEWORKS = {
   broad:      { name: "Broad Ethical",     icon: Globe,         blurb: "Established ESG & ethically screened funds.",               holdings: [{ t:"ESGV",  n:"US ESG Equity",           a:45},{ t:"VSGX",  n:"Intl ESG Equity",         a:25},{ t:"EAGG",  n:"ESG Aggregate Bond",      a:20},{ t:"SUSA",  n:"MSCI USA ESG Select",     a:10}], sim:97.1, excl:214, tithe:2,    faith:false },
@@ -290,30 +315,31 @@ export default function GoodSteward() {
       ["Portfolio value", d.portfolioValue ?? "$0.00"],
       ["Invested to date", d.invested ?? "$0.00"],
       ["Rounded up this month", d.roundupsThisMonth ?? "$0.00"],
-      ["Residue redirected", d.donated ?? "$0.00"],
+      ["Given away", d.donated ?? "$0.00", "amber"],
       ["In clearing", d.clearing ?? "$0.00"],
       ["Framework", fw.name],
       ["Stewardship rate", `${pct}%`],
     ];
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Good Steward · ${month} Statement</title>
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Steward · ${month} Statement</title>
       <style>
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Hanken+Grotesk:wght@400;500;600;700&display=swap');
-        body{font-family:'Hanken Grotesk',system-ui,sans-serif;color:#1F1C16;background:#F3EEE2;margin:0;padding:48px}
-        .card{max-width:620px;margin:0 auto;background:#FBF8F0;border:1px solid #E3DBC9;border-radius:20px;padding:40px}
-        .kick{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#B48A4A;font-weight:700}
-        h1{font-family:'Fraunces',Georgia,serif;font-weight:500;color:#1C3A2E;font-size:30px;margin:6px 0 2px;letter-spacing:-.01em}
-        .sub{color:#7A7263;font-size:13px;margin-bottom:20px}
-        .row{display:flex;justify-content:space-between;padding:13px 0;border-bottom:1px solid #E3DBC9}
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+        body{font-family:'Manrope',system-ui,sans-serif;color:#1A1D1C;background:#F7F5F1;margin:0;padding:48px;font-variant-numeric:tabular-nums}
+        .card{max-width:620px;margin:0 auto;background:#fff;border:1px solid #EBE7DF;border-radius:16px;padding:40px}
+        .kick{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#0E7C6B;font-weight:700}
+        h1{font-weight:700;color:#1A1D1C;font-size:26px;margin:6px 0 2px;letter-spacing:-.03em}
+        .sub{color:#6E736F;font-size:13px;margin-bottom:20px}
+        .row{display:flex;justify-content:space-between;padding:13px 0;border-bottom:1px solid #F6F4EF}
         .row:last-child{border-bottom:none}
-        .k{color:#7A7263;font-size:13.5px}
-        .v{color:#1C3A2E;font-weight:600;font-size:15px}
-        .quote{font-family:'Fraunces',Georgia,serif;font-style:italic;color:#1C3A2E;font-size:15px;line-height:1.5;margin-top:24px;border-top:1px solid #E3DBC9;padding-top:20px}
+        .k{color:#6E736F;font-size:13.5px}
+        .v{color:#1A1D1C;font-weight:700;font-size:15px}
+        .v.amber{color:#946A1E}
+        .quote{color:#6E736F;font-size:14px;line-height:1.6;margin-top:24px;border-top:1px solid #EBE7DF;padding-top:20px}
         @media print{body{background:#fff;padding:0}.card{border:none}}
       </style></head><body><div class="card">
-      <div class="kick">Good Steward · ${month}</div>
+      <div class="kick">Steward · ${month}</div>
       <h1>Wealth · Impact · Restoration</h1>
       <div class="sub">${name}: a fuller account than "you made 8.2%."</div>
-      ${rows.map(([k, v]) => `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("")}
+      ${rows.map(([k, v, cls]) => `<div class="row"><span class="k">${k}</span><span class="v${cls ? " " + cls : ""}">${v}</span></div>`).join("")}
       <div class="quote">"Stewardship: minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."</div>
       </div></body></html>`);
     w.document.close();
@@ -328,33 +354,33 @@ export default function GoodSteward() {
     track("share_open");
     const d = live ? live.display : {};
     const donated = d.donated ?? "$0.00", invested = d.invested ?? "$0.00";
-    const line = `This month with Good Steward I invested ${invested} of spare change by my values, and redirected ${donated} of the residue to giving.`;
+    const line = `This month with Steward I invested ${invested} of spare change by my values, and redirected ${donated} of the residue to giving.`;
     const url = window.location.origin;
     if (navigator.share) {
-      try { await navigator.share({ title: "Good Steward", text: line, url }); return; } catch { /* cancelled — fall through */ }
+      try { await navigator.share({ title: "Steward", text: line, url }); return; } catch { /* cancelled — fall through */ }
     }
     try { await navigator.clipboard?.writeText(line + " " + url); } catch { /* ignore */ }
     const w = window.open("", "_blank", "width=620,height=680");
     if (!w) return;
     const month = new Date().toLocaleString("en-US", { month: "long", year: "numeric" });
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Good Steward</title>
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Steward</title>
       <style>
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Hanken+Grotesk:wght@400;600;700&display=swap');
-        html,body{margin:0;height:100%} body{display:grid;place-items:center;background:#14271F;font-family:'Hanken Grotesk',sans-serif}
-        .card{width:520px;max-width:92vw;aspect-ratio:1/1.15;background:radial-gradient(120% 90% at 50% -10%,#2C4F40 0%,#1C3A2E 55%,#14271F 100%);border-radius:26px;padding:44px;box-sizing:border-box;color:#F3EEE2;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 30px 80px -30px rgba(0,0,0,.6)}
-        .kick{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#D8B877;font-weight:700}
-        .big{font-family:'Fraunces',Georgia,serif;font-weight:500;font-size:26px;line-height:1.25;letter-spacing:-.01em;margin:18px 0 0}
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+        html,body{margin:0;height:100%} body{display:grid;place-items:center;background:#0A2620;font-family:'Manrope',sans-serif;font-variant-numeric:tabular-nums}
+        .card{width:520px;max-width:92vw;aspect-ratio:1/1.15;background:#0E3A33;border-radius:18px;padding:44px;box-sizing:border-box;color:#EAF2F0;display:flex;flex-direction:column;justify-content:space-between}
+        .kick{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#8FB5AC;font-weight:700}
+        .big{font-weight:800;font-size:30px;line-height:1.15;letter-spacing:-.04em;margin:18px 0 0}
         .row{display:flex;gap:28px;margin-top:26px}
-        .stat .n{font-family:'Fraunces',serif;font-weight:600;font-size:34px;color:#fff}
-        .stat .l{font-size:12px;color:#9FB3A4;margin-top:2px}
-        .brass{color:#D8B877}
-        .foot{font-size:12.5px;color:#9FB3A4;display:flex;justify-content:space-between;align-items:center}
+        .stat .n{font-weight:700;font-size:34px;letter-spacing:-.035em;color:#EAF2F0}
+        .stat .l{font-size:12px;color:#8FB5AC;margin-top:2px}
+        .amber{color:#F4C97A}
+        .foot{font-size:12.5px;color:#8FB5AC;display:flex;justify-content:space-between;align-items:center}
       </style></head><body><div class="card">
-      <div><div class="kick">Good Steward · ${month}</div>
+      <div><div class="kick">Steward · ${month}</div>
       <div class="big">Spare change, invested by my values, and the residue given on purpose.</div></div>
       <div class="row">
         <div class="stat"><div class="n">${invested}</div><div class="l">invested this month</div></div>
-        <div class="stat"><div class="n brass">${donated}</div><div class="l">residue redirected</div></div>
+        <div class="stat"><div class="n amber">${donated}</div><div class="l">given away</div></div>
       </div>
       <div class="foot"><span>Money is stored agency.</span><span>${url.replace(/^https?:\/\//,"")}</span></div>
       </div></body></html>`);
@@ -483,12 +509,12 @@ export default function GoodSteward() {
     return (
       <div style={{ minHeight:"100dvh", background:C.bg, fontFamily:sans }}>
         <FontInjector />
-        <header style={{ position:"sticky", top:0, zIndex:10, background:"#F3EEE2f2", backdropFilter:"blur(8px)", borderBottom:`1px solid ${C.line}` }}>
-          <div style={{ maxWidth:920, margin:"0 auto", padding:"13px 24px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:16 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:10 }}><Mark size={22} color={C.brass} /><span style={{ fontFamily:serif, fontSize:19, fontWeight:600, color:C.pine, letterSpacing:"-0.01em" }}>Good Steward</span></div>
+        <header style={{ position:"sticky", top:0, zIndex:10, background:"#F7F5F1f2", backdropFilter:"blur(8px)", borderBottom:`1px solid ${C.line}` }}>
+          <div style={{ maxWidth:920, margin:"0 auto", padding:"12px 26px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:16 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}><Mark size={22} color={C.teal} /><span style={{ fontFamily:sans, fontSize:19, fontWeight:700, color:C.ink, letterSpacing:"-0.02em" }}>Steward</span></div>
             <nav style={{ display:"flex", alignItems:"center", gap:2 }}>
               {nav.map(n => { const Icon = n.icon; const on = tab === n.k; return (
-                <button key={n.k} onClick={() => setTab(n.k)} style={{ background:on?C.pine+"10":"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:7, padding:"8px 13px", borderRadius:10, fontFamily:sans, fontSize:14, fontWeight:on?700:600, color:on?C.pine:C.muted }}><Icon size={16} color={on?C.pine:C.muted} strokeWidth={on?2.1:1.7} />{n.label}</button>
+                <button key={n.k} onClick={() => setTab(n.k)} style={{ background:on?C.tealTint:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:7, padding:"7px 14px", borderRadius:9, fontFamily:sans, fontSize:14, fontWeight:on?700:600, color:on?C.teal:C.muted }}><Icon size={16} color={on?C.teal:C.muted} strokeWidth={on?2.1:1.7} />{n.label}</button>
               ); })}
             </nav>
             <button onClick={logout} style={{ background:"none", border:"none", cursor:"pointer", fontFamily:sans, fontSize:13.5, fontWeight:600, color:C.muted }}>Sign out</button>
@@ -576,7 +602,7 @@ export default function GoodSteward() {
                 {grp.keys.map(k => {
                   const v = FRAMEWORKS[k]; const Icon = v.icon; const on = frameworks.includes(k);
                   return (
-                    <button key={k} onClick={() => toggleFramework(k)} style={{ ...rowCard, borderColor:on?C.pine:C.line, background:on?"#EEF1E9":C.card, boxShadow:on?`0 0 0 1px ${C.pine}`:"none" }}>
+                    <button key={k} onClick={() => toggleFramework(k)} style={{ ...rowCard, borderColor:on?C.teal:C.line, borderWidth:1.5, background:on?C.tealTint:C.card }}>
                       <div style={{ width:40, height:40, borderRadius:11, flexShrink:0, display:"grid", placeItems:"center", background:on?C.pine:"#EDE6D5" }}>
                         <Icon size={19} color={on?C.brassSoft:C.pine} strokeWidth={1.7} />
                       </div>
@@ -616,7 +642,7 @@ export default function GoodSteward() {
             const ex = SCREEN_EXCLUDES[fwKey];
             const chips = k === "light" ? ex.light : k === "moderate" ? [...ex.light,...ex.moderate] : [...ex.light,...ex.moderate,...ex.strong];
             return (
-              <button key={k} onClick={() => setScreen(k)} style={{ ...rowCard, alignItems:"flex-start", flexDirection:"column", gap:8, borderColor:on?C.pine:C.line, background:on?"#EEF1E9":C.card, boxShadow:on?`0 0 0 1px ${C.pine}`:"none" }}>
+              <button key={k} onClick={() => setScreen(k)} style={{ ...rowCard, alignItems:"flex-start", flexDirection:"column", gap:8, borderColor:on?C.teal:C.line, borderWidth:1.5, background:on?C.tealTint:C.card }}>
                 <div style={{ display:"flex", width:"100%", alignItems:"center", justifyContent:"space-between" }}>
                   <span style={{ fontFamily:serif, fontSize:16.5, color:C.ink, fontWeight:500 }}>{v.label}</span>
                   {on && <Check size={17} color={C.pine} />}
@@ -641,7 +667,7 @@ export default function GoodSteward() {
         <div style={{ marginTop:18, fontFamily:sans, fontSize:12.5, color:C.muted, marginBottom:8 }}>Apply to</div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
           {Object.entries(OFFSET_BASIS).map(([k,v]) => (
-            <button key={k} onClick={() => setBasis(k)} style={{ ...miniCard, borderColor:basis===k?C.pine:C.line, background:basis===k?"#EEF1E9":C.card }}>
+            <button key={k} onClick={() => setBasis(k)} style={{ ...miniCard, borderColor:basis===k?C.teal:C.line, background:basis===k?C.tealTint:C.card }}>
               <span style={{ fontFamily:sans, fontSize:12.5, fontWeight:600, color:C.ink }}>{v.label}</span>
             </button>
           ))}
@@ -651,7 +677,7 @@ export default function GoodSteward() {
         </div>
         <input type="range" min={0} max={10} step={0.5} value={pct} onChange={e => setPct(+e.target.value)} style={{ width:"100%", accentColor:C.pine }} />
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginTop:4 }}>
-          <span style={{ fontFamily:serif, fontSize:30, color:C.pine, fontWeight:600 }}>{pct}%</span>
+          <span style={{ fontFamily:sans, fontSize:30, color:C.amber, fontWeight:700, letterSpacing:"-0.03em" }}>{pct}%</span>
           <span style={{ fontFamily:sans, fontSize:13, color:C.muted }}>≈ {fmt(derived.annualDonation)}/yr to causes</span>
         </div>
       </div>
@@ -697,15 +723,14 @@ export default function GoodSteward() {
       <div>
         <Header title="Stewardship" sub={`Good morning${profile.firstName ? ", " + profile.firstName : ""}`} />
         <div style={{ padding:"0 18px" }}>
-          <div style={{ background:`linear-gradient(155deg, ${C.pine} 0%, #16302479 60%, #14271F 100%)`, borderRadius:22, padding:"22px 22px 6px", color:"#F3EEE2", position:"relative", overflow:"hidden" }}>
-            <Grain />
+          <div style={{ background:C.pine, borderRadius:18, padding:"22px 22px 6px", color:"#EAF2F0", position:"relative", overflow:"hidden" }}>
             <div style={{ position:"relative", zIndex:1 }}>
-              <span style={{ fontFamily:sans, fontSize:12, letterSpacing:"0.14em", textTransform:"uppercase", color:C.brassSoft }}>Portfolio value</span>
-              <div style={{ fontFamily:serif, fontSize:40, fontWeight:500, marginTop:4, letterSpacing:"-0.01em" }}>{live ? <AnimatedMoney cents={live.portfolioValueCents} /> : fmt(14820)}</div>
+              <span style={{ fontFamily:sans, fontSize:12.5, fontWeight:600, color:"#8FB5AC" }}>Portfolio value</span>
+              <div style={{ fontFamily:sans, fontSize:38, fontWeight:700, marginTop:4, letterSpacing:"-0.035em", color:"#EAF2F0" }}>{live ? <AnimatedMoney cents={live.portfolioValueCents} /> : fmt(14820)}</div>
               <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:2 }}>
-                <TrendingUp size={15} color={C.brassSoft} />
-                <span style={{ fontFamily:sans, fontSize:13.5, color:"#CFE0D2" }}>
-                  {live ? `${live.display.roundupsThisMonth} rounded up this month` : `+${fmt(1180)} (8.7%) this year`}
+                <TrendingUp size={15} color={C.mint} />
+                <span style={{ fontFamily:sans, fontSize:13.5, color:C.mint }}>
+                  {live ? `${live.display.roundupsThisMonth} rounded up this month` : `+${fmt(1180)} · +8.66% this year`}
                 </span>
               </div>
             </div>
@@ -736,7 +761,7 @@ export default function GoodSteward() {
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:12 }}>
                     <LiveStat label={`Invested · ${live.etf}`} value={live.display.invested} />
                     <LiveStat label="In clearing" value={live.display.clearing} />
-                    <LiveStat label="Redirected residue" value={live.display.donated} />
+                    <LiveStat label="Given away" value={live.display.donated} accent={C.amber} />
                     <LiveStat label={live.display.pending ? "Pending (settling)" : "Orders placed"}
                               value={live.display.pending ?? String(live.ordersPlaced)} />
                   </div>
@@ -748,9 +773,9 @@ export default function GoodSteward() {
                 </>
               ) : (
                 <div style={{ marginTop:12, padding:"14px 15px", background:C.bg, border:`1px dashed ${C.line}`, borderRadius:12, textAlign:"center" }}>
-                  <div style={{ fontFamily:serif, fontSize:17, color:C.pine, fontWeight:500 }}>Your account is ready.</div>
+                  <div style={{ fontFamily:sans, fontSize:16, color:C.ink, fontWeight:700, letterSpacing:"-0.02em" }}>Your account is ready.</div>
                   <div style={{ fontFamily:sans, fontSize:13, color:C.muted, lineHeight:1.5, marginTop:4 }}>
-                    Make your first purchase below. The spare change rounds up, and every $5 buys your {fw.name} ETFs.
+                    Simulate your first purchase below. The spare change rounds up, and every $5 buys your {fw.name} ETFs.
                   </div>
                 </div>
               )}
@@ -763,14 +788,14 @@ export default function GoodSteward() {
                 onClick={addPurchase}
                 disabled={buying}
                 style={{
-                  width: "100%", marginTop: 14, padding: "13px 16px",
-                  background: buying ? C.stone : C.pine, color: "#fff",
-                  border: "none", borderRadius: 12, cursor: buying ? "default" : "pointer",
-                  fontFamily: sans, fontSize: 14.5, fontWeight: 600,
+                  width: "100%", marginTop: 14, padding: "14px 20px",
+                  background: buying ? C.tealActive : C.teal, color: "#fff",
+                  border: "none", borderRadius: 11, cursor: buying ? "default" : "pointer",
+                  fontFamily: sans, fontSize: 13.5, fontWeight: 700,
                   display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                 }}
               >
-                {buying ? "Rounding up…" : <>Make a purchase <ChevronRight size={16} /></>}
+                {buying ? "Rounding up…" : <>Simulate a purchase <ChevronRight size={16} /></>}
               </button>
 
               {/* Real bank feed via Plaid: link once, then Sync pulls actual transactions
@@ -778,15 +803,15 @@ export default function GoodSteward() {
               {user?.plaidEnabled && (
                 user?.bankLinked ? (
                   <button onClick={runSync} disabled={syncing}
-                    style={{ width:"100%", marginTop:9, padding:"12px 16px", background:"transparent", color:C.pine,
-                      border:`1px solid ${C.pine}`, borderRadius:12, cursor: syncing ? "default" : "pointer",
+                    style={{ width:"100%", marginTop:9, padding:"12px 16px", background:"transparent", color:C.teal,
+                      border:`1px solid ${C.teal}`, borderRadius:11, cursor: syncing ? "default" : "pointer",
                       fontFamily:sans, fontSize:14, fontWeight:600, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
                     {syncing ? "Syncing…" : <>Sync transactions <Receipt size={15} /></>}
                   </button>
                 ) : (
                   <button onClick={() => plaidReady && openPlaid()} disabled={!plaidReady}
-                    style={{ width:"100%", marginTop:9, padding:"12px 16px", background:"transparent", color:C.pine,
-                      border:`1px solid ${C.pine}`, borderRadius:12, cursor: plaidReady ? "pointer" : "default",
+                    style={{ width:"100%", marginTop:9, padding:"12px 16px", background:"transparent", color:C.teal,
+                      border:`1px solid ${C.teal}`, borderRadius:11, cursor: plaidReady ? "pointer" : "default",
                       fontFamily:sans, fontSize:14, fontWeight:600, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
                     <Landmark size={15} /> Link your bank
                   </button>
@@ -812,40 +837,28 @@ export default function GoodSteward() {
             {/* Honesty note: these two figures are modelled placeholders, not sourced from
                 fund holdings data. Steward's whole premise is refusing to overstate its own
                 purity — so we say so rather than quietly implying these are audited numbers. */}
-            <p style={{ fontFamily:sans, fontSize:11.5, color:C.stone, lineHeight:1.45, margin:"10px 0 0" }}>
-              Similarity and exclusion counts are <b>illustrative estimates</b>, not audited fund data.
-              How we estimate them: modelled from each fund family's published screening categories
-              (what they exclude and how strictly), scaled by your chosen screen level, not computed
-              from live holdings. They indicate the kind and scale of screening, not a precise count.
-              Your actual holdings and orders (below and in your statement) are real.
+            <p style={{ fontFamily:sans, fontSize:11.5, color:C.faint, lineHeight:1.45, margin:"10px 0 0" }}>
+              Estimates modelled from published screens, not audited holdings. We model them from each
+              fund family's published screening categories (what they exclude and how strictly), scaled
+              by your chosen screen level, not computed from live holdings. Your actual holdings and
+              orders (below and in your statement) are real.
             </p>
           </Card>
 
           <Card>
-            <Row icon={Scale} label="Moral leakage" right={<InfoTag>honest</InfoTag>} />
-            {/* One bar, split honestly: what your screen removes, and the residue it can't. */}
-            <div style={{ display:"flex", height:16, borderRadius:8, overflow:"hidden", marginTop:14, background:C.line }}>
-              <div style={{ width:`${derived.reduction}%`, background:C.good, transition:"width .5s ease" }} />
-              <div style={{ width:`${derived.residual}%`, background:C.warn, transition:"width .5s ease" }} />
+            <Row icon={Scale} label="Exposure" right={<InfoTag>estimate</InfoTag>} />
+            <div style={{ marginTop:14 }}>
+              <ExposureGrid residue={derived.residual} screenedLabel="removed by your screen" residueLabel="the residue" />
             </div>
-            <div style={{ display:"flex", justifyContent:"space-between", marginTop:10 }}>
-              <div>
-                <div style={{ fontFamily:serif, fontSize:20, fontWeight:600, color:C.good }}>{derived.reduction}%</div>
-                <div style={{ fontFamily:sans, fontSize:11.5, color:C.muted }}>harm removed</div>
-              </div>
-              <div style={{ textAlign:"right" }}>
-                <div style={{ fontFamily:serif, fontSize:20, fontWeight:600, color:C.warn }}>{derived.residual}%</div>
-                <div style={{ fontFamily:sans, fontSize:11.5, color:C.muted }}>residue we can't screen out</div>
-              </div>
-            </div>
-            <p style={{ fontFamily:sans, fontSize:12.5, color:C.muted, lineHeight:1.5, margin:"12px 0 0" }}>
-              No portfolio is clean. We show you the part that isn't rather than pretend it away, and the residue is what your giving, below, is for.
+            <p style={{ fontFamily:sans, fontSize:12.5, color:C.muted, lineHeight:1.6, margin:"14px 0 0" }}>
+              {derived.residual} of every 100 holdings survive the screen. No portfolio is clean, so rather than
+              hide the part that isn't, we mark it, and the residue is what your giving, below, is for.
             </p>
           </Card>
 
           <Card>
-            <Row icon={Sparkles} label="Stewardship Score" right={
-              <span style={{ fontFamily:serif, fontSize:26, fontWeight:600, color:C.pine }}>{derived.score}<span style={{ fontSize:14, color:C.muted }}>/100</span></span>
+            <Row icon={Sparkles} label="Stewardship score" right={
+              <span style={{ fontFamily:sans, fontSize:26, fontWeight:700, color:C.ink, letterSpacing:"-0.03em" }}>{derived.score}<span style={{ fontSize:14, color:C.muted, fontWeight:600 }}>/100</span></span>
             } />
             <div style={{ marginTop:8, display:"grid", gap:9 }}>
               <ScoreBar label="Harm reduction"          v={derived.harm}           max={40} />
@@ -858,13 +871,13 @@ export default function GoodSteward() {
           <Card>
             <Row icon={HeartHandshake} label="Auto-tithe engine" />
             <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", marginTop:8 }}>
-              <span style={{ fontFamily:serif, fontSize:28, fontWeight:600, color:C.pine }}>{pct}%</span>
+              <span style={{ fontFamily:sans, fontSize:28, fontWeight:700, color:C.amber, letterSpacing:"-0.03em" }}>{pct}%</span>
               <span style={{ fontFamily:sans, fontSize:13, color:C.muted }}>of {OFFSET_BASIS[basis].label.toLowerCase()}</span>
             </div>
             <p style={{ fontFamily:sans, fontSize:13.5, color:C.ink, margin:"6px 0 0" }}>
-              ≈ <b>{fmt(derived.annualDonation)}/yr</b> routed automatically to flourishing.
+              ≈ <b style={{ color:C.amber }}>{fmt(derived.annualDonation)}/yr</b> given away automatically.
             </p>
-            <button onClick={() => setTab("impact")} style={{ ...textLink, marginTop:10 }}>Adjust & see causes <ChevronRight size={14} /></button>
+            <button onClick={() => setTab("impact")} style={{ ...textLink, marginTop:10 }}>Adjust and see causes <ChevronRight size={14} /></button>
           </Card>
           <div style={{ height:14 }} />
         </div>
@@ -911,7 +924,7 @@ export default function GoodSteward() {
                   <div style={{ display:"flex", flexWrap:"wrap", gap:7 }}>
                     {grp.keys.map(k => {
                       const on = frameworks.includes(k);
-                      return <button key={k} onClick={() => toggleFramework(k)} style={{ ...chipBtn, borderColor:on?C.pine:C.line, background:on?C.pine:"transparent", color:on?"#F3EEE2":C.ink }}>{FRAMEWORKS[k].name}</button>;
+                      return <button key={k} onClick={() => toggleFramework(k)} style={{ ...chipBtn, borderColor:on?C.teal:C.line, background:on?C.teal:"transparent", color:on?"#fff":C.ink }}>{FRAMEWORKS[k].name}</button>;
                     })}
                   </div>
                 </div>
@@ -923,7 +936,7 @@ export default function GoodSteward() {
             <Row icon={Shield} label="Screen strictness" />
             <div style={{ display:"flex", gap:8, marginTop:10 }}>
               {Object.entries(SCREENS).map(([k,v]) => (
-                <button key={k} onClick={() => setScreen(k)} style={{ flex:1, ...chipBtn, borderColor:screen===k?C.pine:C.line, background:screen===k?C.pine:"transparent", color:screen===k?"#F3EEE2":C.ink }}>{v.label}</button>
+                <button key={k} onClick={() => setScreen(k)} style={{ flex:1, ...chipBtn, borderColor:screen===k?C.teal:C.line, background:screen===k?C.teal:"transparent", color:screen===k?"#fff":C.ink }}>{v.label}</button>
               ))}
             </div>
             <Meter label="Direct exposure removed" value={derived.reduction} color={C.good} style={{ marginTop:14 }} />
@@ -945,21 +958,21 @@ export default function GoodSteward() {
             <Row icon={HeartHandshake} label="Stewardship rate" />
             <input type="range" min={0} max={10} step={0.5} value={pct} onChange={e => setPct(+e.target.value)} style={{ width:"100%", accentColor:C.pine, marginTop:12 }} />
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginTop:4 }}>
-              <span style={{ fontFamily:serif, fontSize:30, color:C.pine, fontWeight:600 }}>{pct}%</span>
+              <span style={{ fontFamily:sans, fontSize:30, color:C.amber, fontWeight:700, letterSpacing:"-0.03em" }}>{pct}%</span>
               <span style={{ fontFamily:sans, fontSize:13, color:C.muted }}>≈ {fmt(annualDonation)}/yr</span>
             </div>
             <div style={{ display:"flex", gap:8, marginTop:12, flexWrap:"wrap" }}>
               {Object.entries(OFFSET_BASIS).map(([k,v]) => (
-                <button key={k} onClick={() => setBasis(k)} style={{ ...chipBtn, fontSize:11.5, borderColor:basis===k?C.pine:C.line, background:basis===k?C.pine:"transparent", color:basis===k?"#F3EEE2":C.ink }}>{v.label}</button>
+                <button key={k} onClick={() => setBasis(k)} style={{ ...chipBtn, fontSize:11.5, borderColor:basis===k?C.teal:C.line, background:basis===k?C.teal:"transparent", color:basis===k?"#fff":C.ink }}>{v.label}</button>
               ))}
             </div>
           </Card>
 
           {live && (
             <Card>
-              <Row icon={HeartHandshake} label="Residue redirected" right={<InfoTag>real</InfoTag>} />
+              <Row icon={HeartHandshake} label="Given away" right={<InfoTag>real</InfoTag>} />
               <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", marginTop:8 }}>
-                <AnimatedMoney cents={live.donatedCents} style={{ fontFamily:serif, fontSize:34, fontWeight:600, color:C.pine }} />
+                <AnimatedMoney cents={live.donatedCents} style={{ fontFamily:sans, fontSize:34, fontWeight:700, color:C.amber, letterSpacing:"-0.035em" }} />
                 <span style={{ fontFamily:sans, fontSize:12.5, color:C.muted }}>diverted from your sweeps so far</span>
               </div>
               <p style={{ fontFamily:sans, fontSize:12, color:C.muted, lineHeight:1.5, margin:"8px 0 0" }}>
@@ -993,7 +1006,7 @@ export default function GoodSteward() {
                       <div style={{ fontFamily:sans, fontSize:13.5, fontWeight:600, color:C.ink }}>{c.name}</div>
                       <div style={{ fontFamily:sans, fontSize:11.5, color:C.muted }}>{c.ex}</div>
                     </div>
-                    <span style={{ fontFamily:sans, fontSize:13, fontWeight:600, color:C.pine }}>{fmt(split)}</span>
+                    <span style={{ fontFamily:sans, fontSize:13, fontWeight:700, color:C.amber, letterSpacing:"-0.02em" }}>{fmt(split)}</span>
                   </div>
                 );
               })}
@@ -1019,7 +1032,7 @@ export default function GoodSteward() {
             {live ? (
               <>
                 <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", marginTop:8 }}>
-                  <span style={{ fontFamily:serif, fontSize:28, fontWeight:600, color:C.pine }}>{live.display.roundupsThisMonth}</span>
+                  <span style={{ fontFamily:sans, fontSize:28, fontWeight:700, color:C.ink, letterSpacing:"-0.03em" }}>{live.display.roundupsThisMonth}</span>
                   <span style={{ fontFamily:sans, fontSize:12.5, color:C.muted }}>{live.display.clearing} in clearing → {live.etf}</span>
                 </div>
                 <div style={{ display:"flex", justifyContent:"space-between", marginTop:12, fontFamily:sans, fontSize:13, flexWrap:"wrap", gap:8 }}>
@@ -1069,7 +1082,7 @@ export default function GoodSteward() {
           <div style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:20, padding:22 }}>
             <div style={{ textAlign:"center", borderBottom:`1px solid ${C.line}`, paddingBottom:16 }}>
               <div style={{ display:"flex", justifyContent:"center" }}><Mark size={26} color={C.brass} /></div>
-              <div style={{ fontFamily:serif, fontSize:21, color:C.pine, fontWeight:500, marginTop:6 }}>Wealth · Impact · Restoration</div>
+              <div style={{ fontFamily:sans, fontSize:20, color:C.ink, fontWeight:700, marginTop:6, letterSpacing:"-0.03em" }}>Wealth · Impact · Restoration</div>
               <div style={{ fontFamily:sans, fontSize:12, color:C.muted, marginTop:2 }}>Not "you made 8.2%." A fuller account.</div>
             </div>
             <div style={{ marginTop:8 }}>
@@ -1170,10 +1183,10 @@ function AuthScreen({ signup, login, onBack }) {
         <button onClick={onBack} style={{ ...iconBtn, alignSelf:"flex-start" }}><ChevronLeft size={18} color={C.pine} /></button>
         <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center", gap:14 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <Mark size={24} color={C.brass} />
-            <span style={{ fontFamily:serif, fontSize:19, fontWeight:600, color:C.pine, letterSpacing:"-0.01em" }}>Good Steward</span>
+            <Mark size={24} color={C.teal} />
+            <span style={{ fontFamily:sans, fontSize:19, fontWeight:700, color:C.ink, letterSpacing:"-0.02em" }}>Steward</span>
           </div>
-          <h1 style={{ fontFamily:serif, fontSize:30, fontWeight:500, color:C.pine, margin:0, letterSpacing:"-0.01em" }}>
+          <h1 style={{ fontFamily:sans, fontSize:26, fontWeight:700, color:C.ink, margin:0, letterSpacing:"-0.03em" }}>
             {mode === "signup" ? "Create your account" : mode === "login" ? "Welcome back"
               : mode === "forgot" ? "Reset your password" : "Choose a new password"}
           </h1>
@@ -1214,18 +1227,20 @@ function AuthScreen({ signup, login, onBack }) {
 // The app is a real, full-viewport responsive website — not a phone mockup. On a
 // phone it fills the screen; on desktop the content sits in a comfortable centered
 // column (the layout is a single column by design) against the app background.
-// Good Steward's mark — a hand-drawn balance, not an icon-library glyph. A beam that
+// Steward's mark — a hand-drawn balance, not an icon-library glyph. A beam that
 // tips toward whichever pan holds more weight; here it rests level.
-function Mark({ size = 22, color = C.brass, strokeWidth = 1.5 }) {
-  const p = { stroke: color, strokeWidth, strokeLinecap: "round", strokeLinejoin: "round", fill: "none" };
+// The Steward mark: a rounded teal square framing a centered outlined square.
+// `color` is the container fill; `counter` is the inner stroke. On a deep-green
+// surface pass color={C.mint} counter={C.pine}. Below 16px it drops to a solid
+// square, per the spec.
+function Mark({ size = 22, color = C.teal, counter = "#FFFFFF" }) {
+  const r = size * 0.34;
+  if (size < 16) return <span style={{ display: "block", width: size, height: size, borderRadius: r, background: color }} aria-hidden="true" />;
+  const inner = size * 0.38, off = (size - inner) / 2;
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
-      <path d="M12 3.2 V20.4" {...p} />
-      <path d="M8.2 20.4 H15.8" {...p} />
-      <path d="M4.6 7.4 H19.4" {...p} />
-      <circle cx="12" cy="3.2" r="1.5" fill={color} />
-      <path d="M4.6 7.4 L2.4 12.4 A2.3 2.3 0 0 0 6.8 12.4 Z" {...p} />
-      <path d="M19.4 7.4 L17.2 12.4 A2.3 2.3 0 0 0 21.6 12.4 Z" {...p} />
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true" style={{ display: "block" }}>
+      <rect width={size} height={size} rx={r} fill={color} />
+      <rect x={off} y={off} width={inner} height={inner} rx={size * 0.125} fill="none" stroke={counter} strokeWidth={size * 0.0625} />
     </svg>
   );
 }
@@ -1336,7 +1351,7 @@ function WaitlistForm({ dark = false }) {
       <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="you@example.com" aria-label="Email for the waitlist"
         onKeyDown={(e) => e.key === "Enter" && submit()}
         style={{ flex: "1 1 220px", fontFamily: sans, fontSize: 15, padding: "13px 14px", borderRadius: 12, border: `1px solid ${dark ? "#3a5346" : C.line}`, background: dark ? "rgba(255,255,255,0.06)" : C.card, color: dark ? "#F3EEE2" : C.ink, outline: "none" }} />
-      <button onClick={submit} style={{ background: C.brass, color: "#1F1C16", border: "none", borderRadius: 12, padding: "13px 22px", fontFamily: sans, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>{state === "loading" ? "…" : "Join the waitlist"}</button>
+      <button onClick={submit} style={{ background: C.teal, color: "#fff", border: "none", borderRadius: 11, padding: "13px 22px", fontFamily: sans, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{state === "loading" ? "…" : "Join the waitlist"}</button>
       {state === "error" && <div style={{ flexBasis: "100%", textAlign: "center", fontFamily: sans, fontSize: 12.5, color: "#E0A090" }}>{msg}</div>}
     </div>
   );
@@ -1354,17 +1369,17 @@ function MarketingNav({ route, navigate }) {
   const go = (p) => (e) => { if (e) e.preventDefault(); navigate(p); };
   const link = (on) => ({ background: "none", border: "none", cursor: "pointer", fontFamily: sans, fontSize: 14, fontWeight: 600, color: on ? C.pine : C.muted, textDecoration: "none", paddingBottom: 3, borderBottom: on ? `2px solid ${C.brass}` : "2px solid transparent" });
   return (
-    <nav style={{ position: "sticky", top: 0, zIndex: 20, background: "#F3EEE2f2", backdropFilter: "blur(8px)", borderBottom: `1px solid ${C.line}` }}>
+    <nav style={{ position: "sticky", top: 0, zIndex: 20, background: "#F7F5F1f2", backdropFilter: "blur(8px)", borderBottom: `1px solid ${C.line}` }}>
       <div style={{ maxWidth: 1080, margin: "0 auto", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
         <a href="/" onClick={go("/")} style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
           <Mark size={24} color={C.brass} />
-          <span style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.pine, letterSpacing: "-0.01em" }}>Good Steward</span>
+          <span style={{ fontFamily: sans, fontSize: 20, fontWeight: 700, color: C.ink, letterSpacing: "-0.02em" }}>Steward</span>
         </a>
         <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
           {tabs.map((t) => (
             <a key={t.path} href={t.path} onClick={go(t.path)} style={link(route === t.path)}>{t.label}</a>
           ))}
-          <a href="/signin" onClick={go("/signin")} style={{ background: C.pine, color: "#F3EEE2", textDecoration: "none", borderRadius: 11, padding: "9px 18px", fontFamily: sans, fontSize: 14, fontWeight: 700 }}>Open your account</a>
+          <a href="/signin" onClick={go("/signin")} style={{ background: C.teal, color: "#fff", textDecoration: "none", borderRadius: 9, padding: "9px 18px", fontFamily: sans, fontSize: 14, fontWeight: 700 }}>Open your account</a>
         </div>
       </div>
     </nav>
@@ -1376,7 +1391,7 @@ function MarketingFooter({ navigate }) {
   const foot = { fontFamily: sans, fontSize: 12.5, color: C.muted, textDecoration: "none" };
   return (
     <footer style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, borderTop: `1px solid ${C.line}` }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 9 }}><Mark size={18} color={C.muted} /><span style={{ fontFamily: serif, fontSize: 15, fontWeight: 600, color: C.muted }}>Good Steward</span></div>
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}><Mark size={18} color={C.muted} /><span style={{ fontFamily: sans, fontSize: 15, fontWeight: 700, color: C.muted }}>Steward</span></div>
       <div style={{ display: "flex", gap: 20 }}>
         <a href="/how-it-works" onClick={go("/how-it-works")} style={foot}>How it works</a>
         <a href="/trust" onClick={go("/trust")} style={foot}>What's real</a>
@@ -1388,7 +1403,7 @@ function MarketingFooter({ navigate }) {
 // A reusable brass CTA button that jumps to sign-up.
 function OpenAccountButton({ navigate, label = "Open your account" }) {
   return (
-    <button onClick={() => { track("cta_click"); navigate("/signin"); }} style={{ background: C.brass, color: "#1F1C16", border: "none", borderRadius: 14, padding: "15px 28px", fontFamily: sans, fontSize: 16, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}>{label} <ChevronRight size={18} /></button>
+    <button onClick={() => { track("cta_click"); navigate("/signin"); }} style={{ background: C.teal, color: "#fff", border: "none", borderRadius: 11, padding: "15px 28px", fontFamily: sans, fontSize: 15, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}>{label} <ChevronRight size={18} /></button>
   );
 }
 
@@ -1401,7 +1416,7 @@ function MarketingHome({ navigate }) {
       <Grain />
       <div style={{ ...wrap, position: "relative", zIndex: 1, textAlign: "center", padding: "clamp(56px,10vw,110px) 24px", width: "100%" }}>
         <p style={{ fontFamily: sans, fontSize: 13, letterSpacing: "0.18em", textTransform: "uppercase", color: C.brassSoft, marginBottom: 22 }}>A stewardship layer for your money</p>
-        <h1 style={{ fontFamily: serif, fontWeight: 500, fontSize: "clamp(40px,7vw,74px)", lineHeight: 1.03, margin: 0, letterSpacing: "-0.02em" }}>Money is <span style={{ color: C.brassSoft }}>stored agency.</span></h1>
+        <h1 style={{ fontFamily: serif, fontWeight: 800, fontSize: "clamp(40px,7vw,72px)", lineHeight: 1.02, margin: 0, letterSpacing: "-0.045em" }}>Money is <span style={{ color: C.brassSoft }}>stored agency.</span></h1>
         <p style={{ fontFamily: sans, fontSize: "clamp(16px,2vw,19px)", lineHeight: 1.55, color: "#D9D2C2", margin: "24px auto 0", maxWidth: 520 }}>Round up your spare change and invest it to reduce foreseeable harm.</p>
         <div style={{ marginTop: 36, display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
           <OpenAccountButton navigate={navigate} />
@@ -1429,7 +1444,7 @@ function MarketingHowItWorks({ navigate }) {
   return (
     <div>
       <section style={{ ...wrap, padding: "clamp(44px,7vw,76px) 24px 0", textAlign: "center" }}>
-        <h1 style={{ fontFamily: serif, fontSize: "clamp(30px,5vw,48px)", fontWeight: 500, color: C.pine, margin: "0 0 10px", letterSpacing: "-0.01em" }}>How it works</h1>
+        <h1 style={{ fontFamily: serif, fontSize: "clamp(30px,5vw,44px)", fontWeight: 700, color: C.ink, margin: "0 0 10px", letterSpacing: "-0.03em" }}>How it works</h1>
         <p style={{ fontFamily: sans, fontSize: 17, color: C.muted, maxWidth: 540, margin: "0 auto", lineHeight: 1.5 }}>Three steps. They run in the background while you spend as usual.</p>
       </section>
 
@@ -1444,7 +1459,7 @@ function MarketingHowItWorks({ navigate }) {
       <section style={{ background: C.card, borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}` }}>
         <div style={{ ...wrap, padding: "clamp(48px,7vw,80px) 24px" }}>
           <p style={{ fontFamily: sans, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: C.brass, fontWeight: 700, textAlign: "center", marginBottom: 10 }}>Invest by what you believe</p>
-          <h2 style={{ fontFamily: serif, fontSize: "clamp(28px,4vw,40px)", fontWeight: 500, color: C.pine, textAlign: "center", margin: "0 0 40px", letterSpacing: "-0.01em" }}>A marketplace of moral frameworks.</h2>
+          <h2 style={{ fontFamily: serif, fontSize: "clamp(26px,4vw,38px)", fontWeight: 700, color: C.ink, textAlign: "center", margin: "0 0 40px", letterSpacing: "-0.03em" }}>A marketplace of moral frameworks.</h2>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
             {Object.values(FRAMEWORKS).map((f) => { const Icon = f.icon; return (
               <div key={f.name} style={{ flex: "1 1 240px", maxWidth: 340, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 14, padding: "18px", display: "flex", gap: 13, alignItems: "flex-start" }}>
@@ -1467,7 +1482,7 @@ function MarketingHowItWorks({ navigate }) {
       <section style={{ background: C.pine, color: "#F3EEE2", position: "relative", overflow: "hidden" }}>
         <Grain />
         <div style={{ ...wrap, position: "relative", zIndex: 1, textAlign: "center", padding: "clamp(56px,8vw,88px) 24px" }}>
-          <h2 style={{ fontFamily: serif, fontSize: "clamp(28px,4.5vw,44px)", fontWeight: 500, margin: "0 0 20px", letterSpacing: "-0.01em" }}>Begin stewarding.</h2>
+          <h2 style={{ fontFamily: serif, fontSize: "clamp(26px,4.5vw,40px)", fontWeight: 700, margin: "0 0 20px", letterSpacing: "-0.01em" }}>Begin stewarding.</h2>
           <OpenAccountButton navigate={navigate} />
           <p style={{ fontFamily: sans, fontSize: 12.5, color: "#9FB3A4", marginTop: 18 }}>Free to try. No money leaves your pocket.</p>
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.12)", marginTop: 40, paddingTop: 34 }}>
@@ -1488,7 +1503,7 @@ function MarketingTrust({ navigate }) {
   const wrap = { maxWidth: 820, margin: "0 auto", padding: "0 24px" };
   const Block = ({ title, children }) => (
     <section style={{ ...wrap, padding: "18px 24px 6px" }}>
-      <h2 style={{ fontFamily: serif, fontSize: "clamp(22px,3.4vw,28px)", fontWeight: 500, color: C.pine, margin: "0 0 12px", letterSpacing: "-0.01em" }}>{title}</h2>
+      <h2 style={{ fontFamily: serif, fontSize: "clamp(20px,3.4vw,26px)", fontWeight: 700, color: C.ink, margin: "0 0 12px", letterSpacing: "-0.01em" }}>{title}</h2>
       {children}
     </section>
   );
@@ -1506,7 +1521,7 @@ function MarketingTrust({ navigate }) {
     <div style={{ paddingBottom: 40 }}>
       <header style={{ ...wrap, padding: "clamp(28px,6vw,56px) 24px 20px" }}>
         <p style={{ fontFamily: sans, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: C.brass, fontWeight: 700, marginBottom: 12 }}>What's real, what's simulated</p>
-        <h1 style={{ fontFamily: serif, fontSize: "clamp(30px,5vw,46px)", fontWeight: 500, color: C.pine, margin: 0, lineHeight: 1.08, letterSpacing: "-0.01em" }}>We'd rather tell you the limits than hide them.</h1>
+        <h1 style={{ fontFamily: serif, fontSize: "clamp(28px,5vw,42px)", fontWeight: 700, color: C.ink, margin: 0, lineHeight: 1.08, letterSpacing: "-0.01em" }}>We'd rather tell you the limits than hide them.</h1>
         <p style={{ ...p, marginTop: 16, color: C.muted }}>The whole idea here is naming the residue instead of pretending it away. It would be strange to be dishonest about the product itself. So here's exactly what happens, what's real, and what isn't yet.</p>
       </header>
 
@@ -1536,7 +1551,7 @@ function MarketingTrust({ navigate }) {
       <section style={{ ...wrap, padding: "34px 24px 10px", textAlign: "center" }}>
         <p style={{ ...p, color: C.muted, marginBottom: 18 }}>Try the whole thing now, free, or leave your email and we'll write the day we open.</p>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 26 }}>
-          <button onClick={() => { track("cta_click"); navigate("/signin"); }} style={{ background: C.pine, color: "#F3EEE2", border: "none", borderRadius: 14, padding: "14px 26px", fontFamily: sans, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Open your account</button>
+          <button onClick={() => { track("cta_click"); navigate("/signin"); }} style={{ background: C.teal, color: "#fff", border: "none", borderRadius: 11, padding: "14px 26px", fontFamily: sans, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Open your account</button>
         </div>
         <WaitlistForm />
       </section>
@@ -1581,7 +1596,8 @@ function Frame({ children }) {
   );
 }
 function FontInjector() {
-  return <style>{`@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&display=swap'); *::-webkit-scrollbar{width:0;height:0}
+  return <style>{`@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap'); *::-webkit-scrollbar{width:0;height:0}
+    :root{font-variant-numeric:tabular-nums}
     @keyframes stepIn { from { opacity:0; transform:translateY(10px) } to { opacity:1; transform:none } }
     @keyframes riseIn { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:none } }
     @keyframes flowToClearing { 0% { left:9%; opacity:0; transform:scale(.6) } 15% { opacity:1; transform:scale(1) } 100% { left:47%; opacity:1; transform:scale(1) } }
@@ -1593,19 +1609,39 @@ function Grain() {
   return <div style={{ position:"absolute", inset:0, opacity:0.06, pointerEvents:"none", backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")" }} />;
 }
 function Header({ title, sub }) {
-  return <div style={{ padding:"26px 22px 14px" }}><div style={{ fontFamily:sans, fontSize:12, color:C.muted, letterSpacing:"0.04em" }}>{sub}</div><h1 style={{ fontFamily:serif, fontSize:30, fontWeight:500, color:C.pine, margin:"2px 0 0", letterSpacing:"-0.01em" }}>{title}</h1></div>;
+  return <div style={{ padding:"26px 22px 14px" }}><div style={{ fontFamily:sans, fontSize:12.5, color:C.muted, fontWeight:500 }}>{sub}</div><h1 style={{ fontFamily:sans, fontSize:22, fontWeight:700, color:C.ink, margin:"3px 0 0", letterSpacing:"-0.03em" }}>{title}</h1></div>;
 }
 function Card({ children }) {
-  return <div style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:18, padding:18, marginTop:14 }}>{children}</div>;
+  return <div style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:16, padding:20, marginTop:14 }}>{children}</div>;
 }
 function Row({ icon: Icon, label, right }) {
-  return <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}><div style={{ display:"flex", alignItems:"center", gap:9 }}><Icon size={16} color={C.brass} strokeWidth={1.9} /><span style={{ fontFamily:sans, fontSize:12, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, fontWeight:600 }}>{label}</span></div>{right}</div>;
+  return <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}><div style={{ display:"flex", alignItems:"center", gap:9 }}><Icon size={16} color={C.teal} strokeWidth={1.9} /><span style={{ fontFamily:sans, fontSize:12, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, fontWeight:600 }}>{label}</span></div>{right}</div>;
 }
 function Meter({ label, value, color, caption, style }) {
   return <div style={{ marginTop:12, ...style }}><div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}><span style={{ fontFamily:sans, fontSize:12.5, color:C.ink }}>{label}</span><span style={{ fontFamily:sans, fontSize:13, fontWeight:700, color }}>{value}%{caption&&<span style={{ fontWeight:400, color:C.muted, fontSize:11 }}> · {caption}</span>}</span></div><div style={{ height:7, background:C.line, borderRadius:6, marginTop:5, overflow:"hidden" }}><div style={{ width:`${value}%`, height:"100%", background:color, borderRadius:6, transition:"width .35s ease" }} /></div></div>;
 }
 function ScoreBar({ label, v, max }) {
-  return <div><div style={{ display:"flex", justifyContent:"space-between" }}><span style={{ fontFamily:sans, fontSize:12.5, color:C.ink }}>{label}</span><span style={{ fontFamily:sans, fontSize:12.5, color:C.muted }}>{v}/{max}</span></div><div style={{ height:6, background:C.line, borderRadius:6, marginTop:4, overflow:"hidden" }}><div style={{ width:`${(v/max)*100}%`, height:"100%", background:C.pineSoft, borderRadius:6, transition:"width .35s ease" }} /></div></div>;
+  return <div><div style={{ display:"flex", justifyContent:"space-between" }}><span style={{ fontFamily:sans, fontSize:12.5, color:C.ink }}>{label}</span><span style={{ fontFamily:sans, fontSize:12.5, color:C.muted }}>{v}/{max}</span></div><div style={{ height:6, background:C.line, borderRadius:6, marginTop:4, overflow:"hidden" }}><div style={{ width:`${(v/max)*100}%`, height:"100%", background:C.teal, borderRadius:6, transition:"width .35s ease" }} /></div></div>;
+}
+// The signature graphic: 100 cells, the last `residue` of them amber (the part the
+// screen can't reach, redirected to giving), the rest neutral. Always paired with a
+// two-item numeric legend. Light and dark (deep-green surface) variants.
+function ExposureGrid({ total = 100, residue = 12, cols = 20, dark = false, screenedLabel, residueLabel }) {
+  const screened = total - residue;
+  const neutral = dark ? "rgba(234,242,240,0.22)" : "#CFE3DE";
+  return (
+    <div>
+      <div style={{ display:"grid", gridTemplateColumns:`repeat(${cols}, 1fr)`, gap:2 }}>
+        {Array.from({ length: total }).map((_, i) => (
+          <div key={i} style={{ height:8, borderRadius:2, background: i >= screened ? C.amberChart : neutral }} />
+        ))}
+      </div>
+      <div style={{ display:"flex", justifyContent:"space-between", marginTop:9, fontFamily:sans, fontSize:12, fontWeight:600 }}>
+        <span style={{ color: dark ? "rgba(234,242,240,0.72)" : C.muted }}>{screened} {screenedLabel ?? "screened"}</span>
+        <span style={{ color: dark ? C.amberDark : C.amber }}>{residue} {residueLabel ?? "given away"}</span>
+      </div>
+    </div>
+  );
 }
 function TabBar({ tab, setTab }) {
   const items = [
@@ -1614,39 +1650,39 @@ function TabBar({ tab, setTab }) {
     { k:"impact",    label:"Impact",    icon:HeartHandshake},
     { k:"report",    label:"Statement", icon:Receipt      },
   ];
-  return <div style={{ display:"flex", borderTop:`1px solid ${C.line}`, background:C.card, paddingBottom:18, paddingTop:8 }}>{items.map(it => { const Icon=it.icon; const on=tab===it.k; return <button key={it.k} onClick={() => setTab(it.k)} style={{ flex:1, background:"none", border:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:4, padding:"4px 0" }}><Icon size={20} color={on?C.pine:C.muted} strokeWidth={on?2.1:1.7} /><span style={{ fontFamily:sans, fontSize:10.5, fontWeight:on?700:500, color:on?C.pine:C.muted, letterSpacing:"0.02em" }}>{it.label}</span></button>; })}</div>;
+  return <div style={{ display:"flex", borderTop:`1px solid ${C.line}`, background:C.card, paddingBottom:22, paddingTop:10 }}>{items.map(it => { const Icon=it.icon; const on=tab===it.k; return <button key={it.k} onClick={() => setTab(it.k)} style={{ flex:1, background:"none", border:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:4, padding:"4px 0" }}><Icon size={20} color={on?C.teal:C.faint} strokeWidth={on?2.1:1.7} /><span style={{ fontFamily:sans, fontSize:10.5, fontWeight:on?700:600, color:on?C.teal:C.faint, letterSpacing:"0.02em" }}>{it.label}</span></button>; })}</div>;
 }
 function Btn({ children, onClick, dark }) {
-  return <button onClick={onClick} style={{ width:"100%", padding:"15px", borderRadius:14, border:"none", cursor:"pointer", background:dark?C.brass:C.pine, color:dark?"#1F1C16":"#F3EEE2", fontFamily:sans, fontSize:15, fontWeight:700, letterSpacing:"0.01em", display:"flex", alignItems:"center", justifyContent:"center", gap:6, boxShadow:"0 8px 20px -8px rgba(28,58,46,0.6)" }}>{children}</button>;
+  return <button onClick={onClick} style={{ width:"100%", padding:"14px 20px", borderRadius:11, border:dark?`1px solid ${C.line}`:"none", cursor:"pointer", background:dark?C.card:C.teal, color:dark?C.teal:"#fff", fontFamily:sans, fontSize:13.5, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>{children}</button>;
 }
 function SelectCard({ active, onClick, title, desc }) {
-  return <button onClick={onClick} style={{ ...rowCard, borderColor:active?C.pine:C.line, background:active?"#EEF1E9":C.card, boxShadow:active?`0 0 0 1px ${C.pine}`:"none" }}><div style={{ textAlign:"left", flex:1 }}><div style={{ fontFamily:serif, fontSize:16.5, color:C.ink, fontWeight:500 }}>{title}</div><div style={{ fontFamily:sans, fontSize:12.5, color:C.muted, marginTop:1 }}>{desc}</div></div>{active&&<Check size={18} color={C.pine} />}</button>;
+  return <button onClick={onClick} style={{ ...rowCard, borderWidth:1.5, borderColor:active?C.teal:C.line, background:active?C.tealTint:C.card }}><div style={{ textAlign:"left", flex:1 }}><div style={{ fontFamily:sans, fontSize:15, color:C.ink, fontWeight:700 }}>{title}</div><div style={{ fontFamily:sans, fontSize:12.5, color:C.muted, marginTop:1 }}>{desc}</div></div>{active&&<Check size={18} color={C.teal} />}</button>;
 }
 function Field({ label, value, editable, onEdit }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw]         = useState("");
   return (
-    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:C.card, border:`1px solid ${editing?C.pine:C.line}`, borderRadius:12, padding:"13px 15px", marginTop:10, transition:"border-color .2s" }}>
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:C.card, border:`1px solid ${editing?C.teal:C.line}`, borderRadius:11, padding:"13px 15px", marginTop:10, transition:"border-color .2s" }}>
       <span style={{ fontFamily:sans, fontSize:13, color:C.muted }}>{label}</span>
       {editable && editing
-        ? <input autoFocus value={raw} onChange={e => setRaw(e.target.value)} onBlur={() => { onEdit(raw); setEditing(false); }} onKeyDown={e => { if (e.key==="Enter") { onEdit(raw); setEditing(false); } }} style={{ fontFamily:sans, fontSize:13.5, fontWeight:600, color:C.ink, border:"none", outline:"none", background:"transparent", textAlign:"right", width:100 }} />
+        ? <input autoFocus value={raw} onChange={e => setRaw(e.target.value)} onBlur={() => { onEdit(raw); setEditing(false); }} onKeyDown={e => { if (e.key==="Enter") { onEdit(raw); setEditing(false); } }} style={{ fontFamily:sans, fontSize:13.5, fontWeight:700, color:C.ink, border:"none", outline:"none", background:"transparent", textAlign:"right", width:100 }} />
         : <span onClick={() => editable&&(setRaw(value.replace(/[^0-9]/g,"")),setEditing(true))} style={{ fontFamily:sans, fontSize:13.5, fontWeight:600, color:C.ink, cursor:editable?"text":"default", borderBottom:editable?`1px dashed ${C.muted}`:"none" }}>{value}</span>
       }
     </div>
   );
 }
 function Dots({ n, active }) {
-  return <div style={{ display:"flex", gap:6, flex:1 }}>{Array.from({length:n}).map((_,i) => <div key={i} style={{ flex:1, height:4, borderRadius:4, background:i<=active?C.pine:C.line, transition:"background .3s" }} />)}</div>;
+  return <div style={{ display:"flex", gap:6, flex:1 }}>{Array.from({length:n}).map((_,i) => <div key={i} style={{ flex:1, height:4, borderRadius:4, background:i<=active?C.teal:C.line, transition:"background .3s" }} />)}</div>;
 }
-function Kicker({ children }) { return <div style={{ fontFamily:sans, fontSize:11.5, letterSpacing:"0.16em", textTransform:"uppercase", color:C.brass, fontWeight:700, marginTop:6 }}>{children}</div>; }
-function H2({ children })     { return <h2 style={{ fontFamily:serif, fontSize:26, fontWeight:500, color:C.pine, margin:"8px 0 0", lineHeight:1.12, letterSpacing:"-0.01em" }}>{children}</h2>; }
-function P({ children })      { return <p style={{ fontFamily:sans, fontSize:14, color:C.muted, lineHeight:1.5, margin:"8px 0 0" }}>{children}</p>; }
-function InfoTag({ children }) { return <span style={{ fontFamily:sans, fontSize:10.5, letterSpacing:"0.08em", textTransform:"uppercase", color:C.brass, background:C.brass+"1A", padding:"3px 8px", borderRadius:20, fontWeight:700 }}>{children}</span>; }
-function LiveStat({ label, value }) { return <div style={{ background:C.bg, border:`1px solid ${C.line}`, borderRadius:12, padding:"11px 13px" }}><div style={{ fontFamily:sans, fontSize:11, color:C.muted }}>{label}</div><div style={{ fontFamily:serif, fontSize:20, fontWeight:600, color:C.pine, marginTop:2 }}>{value}</div></div>; }
+function Kicker({ children }) { return <div style={{ fontFamily:sans, fontSize:11.5, letterSpacing:"0.16em", textTransform:"uppercase", color:C.teal, fontWeight:700, marginTop:6 }}>{children}</div>; }
+function H2({ children })     { return <h2 style={{ fontFamily:sans, fontSize:22, fontWeight:700, color:C.ink, margin:"8px 0 0", lineHeight:1.15, letterSpacing:"-0.03em" }}>{children}</h2>; }
+function P({ children })      { return <p style={{ fontFamily:sans, fontSize:13.5, fontWeight:500, color:C.muted, lineHeight:1.6, margin:"8px 0 0" }}>{children}</p>; }
+function InfoTag({ children }) { return <span style={{ fontFamily:sans, fontSize:10.5, letterSpacing:"0.08em", textTransform:"uppercase", color:C.muted, background:C.divider, padding:"3px 8px", borderRadius:20, fontWeight:700 }}>{children}</span>; }
+function LiveStat({ label, value, accent }) { return <div style={{ background:C.bg, border:`1px solid ${C.line}`, borderRadius:12, padding:"11px 13px" }}><div style={{ fontFamily:sans, fontSize:11, color:C.muted, fontWeight:500 }}>{label}</div><div style={{ fontFamily:sans, fontSize:20, fontWeight:700, color:accent ?? C.ink, marginTop:2, letterSpacing:"-0.03em" }}>{value}</div></div>; }
 
-const rowCard  = { display:"flex", alignItems:"center", gap:13, width:"100%", padding:"14px 15px", borderRadius:14, border:`1px solid ${C.line}`, background:C.card, cursor:"pointer" };
+const rowCard  = { display:"flex", alignItems:"center", gap:13, width:"100%", padding:"14px 15px", borderRadius:12, border:`1px solid ${C.line}`, background:C.card, cursor:"pointer" };
 const miniCard = { padding:"13px 12px", borderRadius:12, border:`1px solid ${C.line}`, background:C.card, cursor:"pointer", textAlign:"left" };
-const chip     = { fontFamily:sans, fontSize:11, color:C.pineSoft, background:"#E7EDE3", padding:"4px 9px", borderRadius:20, fontWeight:500 };
+const chip     = { fontFamily:sans, fontSize:11, color:C.teal, background:C.tealTint, padding:"4px 9px", borderRadius:20, fontWeight:600 };
 const chipBtn  = { fontFamily:sans, fontSize:12.5, fontWeight:600, padding:"9px 13px", borderRadius:20, border:`1px solid ${C.line}`, cursor:"pointer" };
-const iconBtn  = { width:32, height:32, borderRadius:10, border:`1px solid ${C.line}`, background:C.card, display:"grid", placeItems:"center", cursor:"pointer" };
-const textLink = { fontFamily:sans, fontSize:13, fontWeight:600, color:C.pine, background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:3, padding:0 };
+const iconBtn  = { width:32, height:32, borderRadius:11, border:`1px solid ${C.line}`, background:C.card, display:"grid", placeItems:"center", cursor:"pointer" };
+const textLink = { fontFamily:sans, fontSize:13, fontWeight:600, color:C.teal, background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:3, padding:0 };
