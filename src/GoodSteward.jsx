@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import { usePlaidLink } from "react-plaid-link";
 import { AreaChart, Area, ResponsiveContainer, XAxis, Tooltip } from "recharts";
 import {
-  Globe, Church, Star, Moon, Heart, Sliders, ChevronRight, ChevronLeft,
+  Globe, Church, Moon, Heart, Sliders, ChevronRight, ChevronLeft,
   Check, Shield, Coins, PiggyBank, Sparkles, TrendingUp, Scale,
   Wallet, Receipt, Info, Leaf, BookOpen, Users, HeartHandshake, Landmark, Bird,
 } from "lucide-react";
@@ -46,7 +46,7 @@ const FRAMEWORKS = {
   humanrights:{ name: "Human Rights",      icon: Users,         blurb: "Screens for labor rights, equality & supply-chain ethics.", holdings: [{ t:"ESGV",  n:"US ESG Equity",           a:40},{ t:"VSGX",  n:"Intl ESG Equity",         a:28},{ t:"JUST",  n:"JUST US Large Cap",       a:17},{ t:"EAGG",  n:"ESG Aggregate Bond",      a:15}], sim:96.2, excl:243, tithe:2,    faith:false },
   animal:     { name: "Animal Welfare",    icon: Bird,          blurb: "Excludes factory farming, animal testing & fur trade.",      holdings: [{ t:"VEGN",  n:"US Vegan Climate ETF",    a:50},{ t:"ESGV",  n:"US ESG Equity",           a:25},{ t:"VSGX",  n:"Intl ESG Equity",         a:15},{ t:"EAGG",  n:"ESG Aggregate Bond",      a:10}], sim:93.6, excl:331, tithe:2,    faith:false },
   christian:  { name: "Christian Values",  icon: Church,        blurb: "Biblically & Catholic-screened funds. Tithing tradition.",   holdings: [{ t:"BIBL",  n:"Inspire 100 ETF",         a:40},{ t:"PRAY",  n:"FIS Biblical Responsible", a:25},{ t:"FCATX", n:"Catholic Values Equity",  a:20},{ t:"FBND",  n:"Core Bond",               a:15}], sim:95.8, excl:268, tithe:10,   faith:true  },
-  jewish:     { name: "Jewish Values",     icon: Star,          blurb: "Tzedek-aligned screens; tzedakah giving.",                  holdings: [{ t:"ESGV",  n:"US ESG Equity",           a:42},{ t:"VSGX",  n:"Intl ESG Equity",         a:23},{ t:"EAGG",  n:"ESG Aggregate Bond",      a:20},{ t:"SUSB",  n:"Short-Term ESG Bond",     a:15}], sim:96.4, excl:231, tithe:10,   faith:true  },
+  jewish:     { name: "Jewish Values",     icon: StarOfDavid,   blurb: "Tzedek-aligned screens; tzedakah giving.",                 holdings: [{ t:"ESGV",  n:"US ESG Equity",           a:42},{ t:"VSGX",  n:"Intl ESG Equity",         a:23},{ t:"EAGG",  n:"ESG Aggregate Bond",      a:20},{ t:"SUSB",  n:"Short-Term ESG Bond",     a:15}], sim:96.4, excl:231, tithe:10,   faith:true  },
   islamic:    { name: "Islamic / Sharia",  icon: Moon,          blurb: "Sharia-compliant, interest-free. Zakat at 2.5%.",           holdings: [{ t:"SPUS",  n:"SP Funds S&P 500 Sharia", a:50},{ t:"HLAL",  n:"Wahed FTSE USA Sharia",   a:30},{ t:"SPSK",  n:"Dow Jones Sukuk",         a:20}],                                                                                                                   sim:93.2, excl:312, tithe:2.5,  faith:true  },
 };
 
@@ -347,7 +347,7 @@ export default function GoodSteward() {
       <h1>Wealth · Impact · Restoration</h1>
       <div class="sub">${name}: a fuller account than "you made 8.2%."</div>
       ${rows.map(([k, v, cls]) => `<div class="row"><span class="k">${k}</span><span class="v${cls ? " " + cls : ""}">${v}</span></div>`).join("")}
-      <div class="quote">"Stewardship: minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."</div>
+      <div class="quote">Stewardship: minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good.</div>
       </div></body></html>`);
     w.document.close();
     w.focus();
@@ -1121,7 +1121,7 @@ export default function GoodSteward() {
 
           <Card>
             <p style={{ fontFamily:sans, fontSize:14, fontWeight:500, color:C.ink, lineHeight:1.6, margin:0 }}>
-              "Stewardship: minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."
+              Stewardship: minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good.
             </p>
           </Card>
 
@@ -1254,6 +1254,19 @@ function Mark({ size = 22, color = C.teal, counter = "#FFFFFF" }) {
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true" style={{ display: "block" }}>
       <rect width={size} height={size} rx={r} fill={color} />
       <rect x={off} y={off} width={inner} height={inner} rx={size * 0.125} fill="none" stroke={counter} strokeWidth={size * 0.0625} />
+    </svg>
+  );
+}
+
+// A Star of David — lucide-react has no hexagram, so this is a small outline icon
+// built to match the lucide API (size/color/strokeWidth) used everywhere else icons
+// are rendered. Two overlapping triangles, stroke only, no fill.
+function StarOfDavid({ size = 24, color = "currentColor", strokeWidth = 1.8 }) {
+  const p = { stroke: color, strokeWidth, strokeLinecap: "round", strokeLinejoin: "round", fill: "none" };
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
+      <path d="M12 4 L18.93 16 L5.07 16 Z" {...p} />
+      <path d="M12 20 L5.07 8 L18.93 8 Z" {...p} />
     </svg>
   );
 }
@@ -1487,7 +1500,7 @@ function MarketingHowItWorks({ navigate }) {
       <section style={{ ...wrap, padding: "clamp(56px,8vw,96px) 24px", textAlign: "center", maxWidth: 760 }}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}><Mark size={30} color={C.brass} /></div>
         <blockquote style={{ fontFamily: sans, fontSize: "clamp(19px,2.6vw,26px)", lineHeight: 1.5, fontWeight: 500, color: C.pine, margin: 0, letterSpacing: "-0.005em" }}>
-          "Minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good."
+          Minimize foreseeable harm, preserve practical effectiveness, and direct the unavoidable residue toward the common good.
         </blockquote>
         <p style={{ fontFamily: sans, fontSize: 15.5, color: C.muted, marginTop: 22, lineHeight: 1.6 }}>Your monthly statement shows more than a return. It puts three numbers side by side: what you kept, what you invested, and what you gave.</p>
       </section>
