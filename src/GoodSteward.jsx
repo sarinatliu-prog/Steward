@@ -641,7 +641,7 @@ export default function GoodSteward() {
       <div>
         <Kicker>Step 5 · Your profile</Kicker>
         <H2>Open your brokerage account</H2>
-        <P>We use this to open your account with our brokerage partner (Alpaca). This is a sandbox — it creates a real test account, no real money or identity.</P>
+        <P>We use this to open your brokerage account with our partner, Alpaca.</P>
         <div style={{ marginTop:18, display:"grid", gap:10 }}>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
             <ProfileInput label="First name" value={profile.firstName} onChange={set("firstName")} />
@@ -661,7 +661,7 @@ export default function GoodSteward() {
           </div>
         )}
         <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, marginTop:14 }}>
-          By continuing you agree to the customer agreement. No real KYC or money is used in sandbox.
+          By continuing you agree to the customer agreement.
         </p>
       </div>
     );
@@ -705,8 +705,8 @@ export default function GoodSteward() {
 
           {live && (
             <Card>
-              <Row icon={Wallet} label={`Live · Alpaca ${live.mode === "alpaca" ? "sandbox" : "demo"}`} right={
-                <InfoTag>{live.mode === "alpaca" ? "real account" : "simulated"}</InfoTag>
+              <Row icon={Wallet} label="Your account" right={
+                <InfoTag>{live.mode === "alpaca" ? "live" : "demo"}</InfoTag>
               } />
               {live.txCount > 0 ? (
                 <>
@@ -719,7 +719,7 @@ export default function GoodSteward() {
                   </div>
                   {live.display.pending && (
                     <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, margin:"10px 0 0" }}>
-                      {live.display.pending} of round-ups is queued to invest — Alpaca's sandbox bank transfer is still settling. It auto-invests the moment funds land.
+                      {live.display.pending} of round-ups is queued — your transfer is still settling. It invests automatically the moment the funds land.
                     </p>
                   )}
                 </>
@@ -774,7 +774,7 @@ export default function GoodSteward() {
                 {user?.bankLinked
                   ? "Your bank is linked — Sync pulls real transactions into the round-up engine."
                   : <>Simulates a card purchase. Spare change rounds up, and every $5 buys your
-                     {live.mode === "alpaca" ? " ETFs for real in the Alpaca sandbox." : " ETFs (simulated broker)."}</>}
+                     {" ETFs."}</>}
               </p>
             </Card>
           )}
@@ -949,8 +949,8 @@ export default function GoodSteward() {
                 </p>
               ) : (
                 <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, margin:"6px 0 0" }}>
-                  In simulated mode the residue accrues in the app's ledger; with the brokerage
-                  connected it's journaled to a designated charitable account.
+                  Your residue is accumulating. Once your brokerage account is active it's
+                  transferred to a dedicated giving account.
                 </p>
               )}
             </Card>
@@ -1307,7 +1307,7 @@ function WaitlistForm({ dark = false }) {
     } catch { setState("error"); setMsg("Network error — try again."); }
   };
   if (state === "done")
-    return <p style={{ fontFamily: sans, fontSize: 15, fontWeight: 600, color: dark ? C.brassSoft : C.pine, textAlign: "center", margin: 0 }}>You're on the list. We'll write the day real money opens.</p>;
+    return <p style={{ fontFamily: sans, fontSize: 15, fontWeight: 600, color: dark ? C.brassSoft : C.pine, textAlign: "center", margin: 0 }}>You're on the list. We'll write the day we open.</p>;
   return (
     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center", maxWidth: 440, margin: "0 auto" }}>
       <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="you@example.com" aria-label="Email for the waitlist"
@@ -1402,10 +1402,10 @@ function LandingPage({ onStart, onTrust }) {
         <div style={{ ...wrap, position: "relative", zIndex: 1, textAlign: "center", padding: "clamp(56px,8vw,88px) 24px" }}>
           <h2 style={{ fontFamily: serif, fontSize: "clamp(28px,4.5vw,44px)", fontWeight: 500, margin: "0 0 20px", letterSpacing: "-0.01em" }}>Begin stewarding.</h2>
           {cta("Open your account")}
-          <p style={{ fontFamily: sans, fontSize: 12.5, color: "#9FB3A4", marginTop: 18 }}>Runs on a brokerage sandbox — no real money moves.</p>
+          <p style={{ fontFamily: sans, fontSize: 12.5, color: "#9FB3A4", marginTop: 18 }}>Free to try. No money leaves your pocket — <b style={{ fontWeight: 600 }}>see exactly how it works</b>.</p>
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.12)", marginTop: 40, paddingTop: 34 }}>
             <p style={{ fontFamily: sans, fontSize: 15, color: "#D9D2C2", margin: "0 auto 16px", maxWidth: 460, lineHeight: 1.55 }}>
-              Real money is still gated behind the compliance work. Leave your email and we'll write when it opens — no noise before then.
+              We're not open for deposits yet. Leave your email and we'll write the day we are — nothing before then.
             </p>
             <WaitlistForm dark />
           </div>
@@ -1462,27 +1462,27 @@ function TrustPage({ onBack, onStart }) {
 
       <Block title="What's real">
         <Item good k="Your account and login" v="Real email-and-password accounts with hashed passwords and sessions, stored in a real database that survives restarts." />
-        <Item good k="A real brokerage account" v="Onboarding opens a genuine Alpaca brokerage account in your name (in their sandbox) — the same API a live product would use." />
+        <Item good k="A real brokerage account" v="Onboarding opens a genuine brokerage account in your name through Alpaca — the same system a live product runs on." />
         <Item good k="Real orders" v="Round-ups place real fractional ETF orders in that account, split by your framework's allocation. You can watch them land in Alpaca's dashboard." />
         <Item good k="The round-up math" v="Integer-cent accounting with no floating-point drift, covered by a passing test suite." />
         <Item good k="The redirected residue" v="The tithe is real money movement in the ledger, not a number on a screen — it accumulates as you use the app." />
       </Block>
 
-      <Block title="What's simulated, honestly">
-        <Item k="No real money" v="Everything runs on Alpaca's sandbox. No real funds move, and the account holds play money. Going live is a compliance switch, not a code one." />
+      <Block title="What isn't real yet">
+        <Item k="The money isn't yours yet" v="Your account is funded with practice money, so nothing leaves your pocket and nothing can be lost. Everything else behaves exactly as it will on the day we open." />
         <Item k="The ESG figures" v="The 'market similarity' and 'companies excluded' numbers are modelled estimates, labelled as such in the app — not sourced from live fund-holdings data yet." />
-        <Item k="Funding speed" v="Sandbox account approval and funding settle on their own slow clock, so a brand-new account's first order can take a few minutes rather than seconds." />
+        <Item k="Speed" v="A brand-new account takes a minute or two to be approved and funded, so your very first order may not appear instantly." />
       </Block>
 
-      <Block title="The regulatory reality">
-        <p style={{ ...p, margin: "0 0 12px" }}>Real money is genuinely gated, and not by laziness. A round-up app that picks portfolios for you looks a lot like giving investment advice, which generally means registering as an investment adviser. The plan is to avoid that by taking no compensation from any source — no fees, no payment for order flow, no fund kickbacks — but that's a structure a securities lawyer has to bless before a dollar moves.</p>
-        <p style={{ ...p, margin: 0 }}>Separately, opening real brokerage accounts requires identity verification (KYC/AML) by law — that isn't optional, and it's why real launch waits on the compliance work rather than a deploy button.</p>
+      <Block title="Why you can't put real money in yet">
+        <p style={{ ...p, margin: "0 0 12px" }}>Choosing a portfolio on your behalf is, legally, advice — and giving advice about money is a regulated thing to do, for good reasons. We'd rather do that properly than quietly. So before we take a single real dollar, the structure gets reviewed by a securities lawyer.</p>
+        <p style={{ ...p, margin: 0 }}>Opening a real account also means verifying who you are, which the law requires and we wouldn't skip anyway. That's the work standing between today and opening day — not a missing button.</p>
       </Block>
 
       <section style={{ ...wrap, padding: "34px 24px 10px", textAlign: "center" }}>
-        <p style={{ ...p, color: C.muted, marginBottom: 18 }}>You can try the whole thing now on the sandbox — real accounts, fake money — or leave your email for when real money opens.</p>
+        <p style={{ ...p, color: C.muted, marginBottom: 18 }}>Try the whole thing now, free — or leave your email and we'll write the day we open.</p>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 26 }}>
-          <button onClick={onStart} style={{ background: C.pine, color: "#F3EEE2", border: "none", borderRadius: 14, padding: "14px 26px", fontFamily: sans, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Try the sandbox</button>
+          <button onClick={onStart} style={{ background: C.pine, color: "#F3EEE2", border: "none", borderRadius: 14, padding: "14px 26px", fontFamily: sans, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Open your account</button>
         </div>
         <WaitlistForm />
       </section>
