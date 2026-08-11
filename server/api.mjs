@@ -148,6 +148,45 @@ async function routeDonations(user) {
 }
 const charityShort = () => (charityId ? charityId.slice(0, 8) + "…" : null);
 
+// Advance one user's pending money: fund the account if it's ready, route any queued
+// residue, and invest anything still waiting. Safe to call often — every step is a
+// no-op when there's nothing to do.
+//
+// This runs BOTH on a timer and on request. On Render's free tier the server sleeps
+// after ~15 min idle, which kills the interval — so an account created just before a
+// sleep would sit unfunded forever, with round-ups stuck "pending". Calling it when
+// the user loads their portfolio means any page view nudges their money forward.
+async function settleUser(user) {
+  if (!usesAlpaca(user)) return false;
+  let changed = false;
+  if (!user.funded) {
+    const f = await fundIfActive(user.alpacaAccountId);
+    if (f.method === "journal") {
+      user.funded = true; user.fundingMethod = "journal"; changed = true;
+    } else if (!user.achFallbackDone &&
+               Date.now() - (user.fundingStartedAt || 0) > 180000) {
+      try {
+        await fundViaAch(user.alpacaAccountId);
+        user.achFallbackDone = true; user.funded = true; user.fundingMethod = "ach";
+        changed = true;
+      } catch (e) {
+        console.warn("ACH fallback failed for " + user.alpacaAccountId + ": " +
+          String(e.message).split("\n")[0]);
+      }
+    }
+  }
+  if ((user.pendingDonationCents ?? 0) > 0) {
+    if (await routeDonations(user)) changed = true;
+  }
+  if (user.pendingInvestCents > 0) {
+    const before = user.pendingInvestCents;
+    await retryPending(user, brokerFor(user));
+    if (user.pendingInvestCents !== before) changed = true;
+  }
+  if (changed) db.saveUser(user);
+  return changed;
+}
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 const server = createServer(async (req, res) => {
  try {
@@ -346,6 +385,9 @@ const server = createServer(async (req, res) => {
 
     // ---- portfolio ----
     if (req.method === "GET" && path === "/api/portfolio") {
+      // Nudge any pending funding/investing along; the interval alone can't be
+      // relied on when the host sleeps between visits.
+      try { await settleUser(user); } catch (e) { captureError(e, "settleUser"); }
       return sendJson(res, 200, summary(user, { mode: modeFor(user), charity: charityShort(), alpacaSnapshot: await snapshotFor(user) }));
     }
 
@@ -466,36 +508,7 @@ async function serveStatic(res, pathname) {
 if (ALPACA) {
   setInterval(async () => {
     for (const user of db.allUsers()) {
-      if (!usesAlpaca(user)) continue;
-      let changed = false;
-      if (!user.funded) {
-        const f = await fundIfActive(user.alpacaAccountId);
-        if (f.method === "journal") {
-          user.funded = true; user.fundingMethod = "journal"; changed = true;
-        } else if (!user.achFallbackDone &&
-                   Date.now() - (user.fundingStartedAt || 0) > 180000) {
-          // Journal hasn't funded within 3 min — fall back to ACH so the account is
-          // never permanently stuck at $0. Only mark done if the ACH call succeeds,
-          // so a transient failure retries next loop.
-          try {
-            await fundViaAch(user.alpacaAccountId);
-            user.achFallbackDone = true; user.funded = true; user.fundingMethod = "ach";
-            changed = true;
-          } catch (e) {
-            console.warn("ACH fallback failed for " + user.alpacaAccountId + ": " +
-              String(e.message).split("\n")[0]);
-          }
-        }
-      }
-      if ((user.pendingDonationCents ?? 0) > 0) {
-        if (await routeDonations(user)) changed = true;
-      }
-      if (user.pendingInvestCents > 0) {
-        const before = user.pendingInvestCents;
-        await retryPending(user, brokerFor(user));
-        if (user.pendingInvestCents !== before) changed = true;
-      }
-      if (changed) db.saveUser(user);
+      try { await settleUser(user); } catch (e) { captureError(e, "settleUser/interval"); }
     }
   }, 20_000);
 }
