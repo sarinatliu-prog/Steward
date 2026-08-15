@@ -1471,28 +1471,27 @@ function MarketingHome({ navigate }) {
 // How it works: the three steps, the framework marketplace, and the honest statement.
 function MarketingHowItWorks({ navigate }) {
   const wrap = { maxWidth: 1080, margin: "0 auto", padding: "0 24px" };
-  const Step = ({ icon: Icon, n, title, body }) => (
+  const Step = ({ icon: Icon, n, body }) => (
     <div style={{ flex: "1 1 260px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 18, padding: "26px 24px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <div style={{ width: 42, height: 42, borderRadius: 12, background: C.pine, display: "grid", placeItems: "center" }}><Icon size={20} color={C.brassSoft} strokeWidth={1.7} /></div>
-        <span style={{ fontFamily: sans, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: C.brass, fontWeight: 700 }}>{n}</span>
+        <span style={{ fontFamily: sans, fontSize: 20, letterSpacing: "0.04em", textTransform: "uppercase", color: C.brass, fontWeight: 700 }}>{n}</span>
       </div>
-      <h3 style={{ fontFamily: serif, fontSize: 21, fontWeight: 500, color: C.pine, margin: "16px 0 6px" }}>{title}</h3>
-      <p style={{ fontFamily: sans, fontSize: 14.5, lineHeight: 1.55, color: C.muted, margin: 0 }}>{body}</p>
+      <p style={{ fontFamily: sans, fontSize: 14.5, lineHeight: 1.55, color: C.muted, margin: "14px 0 0" }}>{body}</p>
     </div>
   );
   return (
     <div>
       <section style={{ ...wrap, padding: "clamp(44px,7vw,76px) 24px 0", textAlign: "center" }}>
         <h1 style={{ fontFamily: serif, fontSize: "clamp(30px,5vw,44px)", fontWeight: 700, color: C.ink, margin: "0 0 10px", letterSpacing: "-0.03em" }}>How it works</h1>
-        <p style={{ fontFamily: sans, fontSize: 17, color: C.muted, maxWidth: 540, margin: "0 auto", lineHeight: 1.5 }}>Three steps. They run in the background while you spend as usual.</p>
+        <p style={{ fontFamily: sans, fontSize: 17, color: C.muted, maxWidth: 540, margin: "0 auto", lineHeight: 1.5 }}>three steps that run in the background while you spend as usual.</p>
       </section>
 
       <section style={{ ...wrap, padding: "clamp(30px,5vw,52px) 24px" }}>
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-          <Step icon={Coins} n="01 · Round up" title="Spare change, gathered" body="Every purchase rounds up to the nearest dollar. A $3.60 coffee sets aside 40¢, invisible to you but meaningful in aggregate." />
-          <Step icon={Scale} n="02 · Invest by your values" title="Your framework, your holdings" body="Choose a moral framework, from broad ESG to Christian, Jewish, or Islamic screens. Your round-ups buy the ETFs that fit it." />
-          <Step icon={HeartHandshake} n="03 · Give what's left" title="Give what's left" body="No investment is perfectly clean. A set share of every $5 sweep goes to a cause you choose, so the part you can't screen out still does some good." />
+          <Step icon={Coins} n="01 · Round up" body="Every purchase rounds up to the nearest dollar. A $3.60 coffee sets aside 40¢, invisible to you but meaningful in aggregate." />
+          <Step icon={Scale} n="02 · Invest by your values" body="Choose a moral framework, from broad ESG to Christian, Jewish, or Islamic screens. Your round-ups buy the ETFs that fit it." />
+          <Step icon={HeartHandshake} n="03 · Give what's left" body="No investment is perfectly clean. A set share of every $5 sweep goes to a cause you choose, so the part you can't screen out still does some good." />
         </div>
       </section>
 
