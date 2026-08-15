@@ -53,6 +53,15 @@ services:
       - key: ALPACA_BASE_URL
         value: https://broker-api.sandbox.alpaca.markets
 
+      # Sandbox-only convenience: gifts every new account $100 of OUR money so this
+      # demo works instantly, instead of requiring a real deposit. This deployment
+      # IS the sandbox demo, so "1" here is correct — but this must NEVER be set to
+      # "1" on a real production deployment (that hands every signup real company
+      # money). See the "Real Deposits Build Spec": with this off, users fund their
+      # own account from their own bank via the new Deposit screen.
+      - key: AUTO_FUND_NEW_ACCOUNTS
+        value: "1"
+
       # ── Email (real password-reset + verification emails via Resend) ────────
       # Get a free key at https://resend.com → API Keys, then paste it into
       # Render's Environment tab (sync:false keeps it out of git). Without it,

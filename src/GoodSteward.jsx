@@ -175,7 +175,7 @@ function useLiveData() {
   const syncBank = () =>
     fetch("/api/plaid/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
       .then(r => r.ok ? r.json() : null).then(d => { if (d) setData(d); return d; }).catch(() => null);
-  return { data, addPurchase, setConfig, buying, syncBank };
+  return { data, addPurchase, setConfig, buying, syncBank, refresh };
 }
 
 export default function GoodSteward() {
@@ -234,10 +234,11 @@ export default function GoodSteward() {
     setVerifyLink(r.devLink || (r.emailed ? "emailed" : "sent"));
     setVerifyBusy(false);
   };
-  const { data: live, addPurchase, setConfig, buying, syncBank } = useLiveData();
+  const { data: live, addPurchase, setConfig, buying, syncBank, refresh: refreshPortfolio } = useLiveData();
   const [linkToken, setLinkToken] = useState(null);
   const [syncing, setSyncing]     = useState(false);
   const [activity, setActivity]   = useState([]);
+  const [showFunding, setShowFunding] = useState(false);
 
   // Pull the account's audit trail so the Statement can show what actually happened.
   useEffect(() => {
@@ -469,6 +470,20 @@ export default function GoodSteward() {
           </div>
         </div>
       </Frame>
+    );
+  }
+
+  /* ── DEPOSIT & WITHDRAW (its own screen, like onboarding — reachable from Home) ── */
+  if (showFunding) {
+    return (
+      <FundingScreen
+        onBack={() => setShowFunding(false)}
+        live={live}
+        refreshPortfolio={refreshPortfolio}
+        bankLinked={!!user?.bankLinked}
+        plaidReady={plaidReady}
+        openPlaid={openPlaid}
+      />
     );
   }
 
@@ -773,18 +788,31 @@ export default function GoodSteward() {
               {live.txCount > 0 ? (
                 <>
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:12 }}>
+                    <LiveStat label="Cash" value={live.display.cash} />
                     <LiveStat label={`Invested · ${live.etf}`} value={live.display.invested} />
                     <LiveStat label="In clearing" value={live.display.clearing} />
                     <LiveStat label="Given away" value={live.display.donated} accent={C.amber} />
                     <LiveStat label={live.display.pending ? "Pending (settling)" : "Orders placed"}
                               value={live.display.pending ?? String(live.ordersPlaced)} />
                   </div>
+                  {live.display.pendingDeposit && (
+                    <p style={{ fontFamily:sans, fontSize:11.5, color:C.faint, lineHeight:1.5, margin:"10px 0 0" }}>
+                      {live.display.pendingDeposit} in deposits still settling.
+                    </p>
+                  )}
                   {live.display.pending && (
                     <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, margin:"10px 0 0" }}>
                       {live.display.pending} of round-ups is queued. Your transfer is still settling, and it invests automatically the moment the funds land.
                     </p>
                   )}
                 </>
+              ) : !user?.bankLinked && !((live.cashCents ?? 0) > 0) ? (
+                <div style={{ marginTop:12, padding:"14px 15px", background:C.bg, border:`1px dashed ${C.line}`, borderRadius:12, textAlign:"center" }}>
+                  <div style={{ fontFamily:sans, fontSize:16, color:C.ink, fontWeight:700, letterSpacing:"-0.02em" }}>Link your bank to get started.</div>
+                  <div style={{ fontFamily:sans, fontSize:13, color:C.muted, lineHeight:1.5, marginTop:4 }}>
+                    Steward invests your own money, by your own values. Connect your bank to make your first deposit.
+                  </div>
+                </div>
               ) : (
                 <div style={{ marginTop:12, padding:"14px 15px", background:C.bg, border:`1px dashed ${C.line}`, borderRadius:12, textAlign:"center" }}>
                   <div style={{ fontFamily:sans, fontSize:16, color:C.ink, fontWeight:700, letterSpacing:"-0.02em" }}>Your account is ready.</div>
@@ -794,22 +822,39 @@ export default function GoodSteward() {
                 </div>
               )}
 
-              {/* The core interaction of the whole product: spend money → spare change
-                  rounds up → sweeps at $5 → buys your framework's ETFs. This used to be a
-                  small text link buried in the Impact tab, which meant nobody ever found
-                  the one button that demonstrates what Steward actually does. */}
+              {/* Real money in: the user's own funds, from their own bank. This is the
+                  primary action now that deposits are real — see the Real Deposits build
+                  spec. Opens its own screen (link bank → pick account → deposit/withdraw). */}
+              {user?.plaidEnabled && (
+                <button
+                  onClick={() => setShowFunding(true)}
+                  style={{
+                    width: "100%", marginTop: 14, padding: "14px 20px",
+                    background: C.teal, color: "#fff",
+                    border: "none", borderRadius: 11, cursor: "pointer",
+                    fontFamily: sans, fontSize: 13.5, fontWeight: 700,
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  }}
+                >
+                  <PiggyBank size={16} /> Deposit <ChevronRight size={16} />
+                </button>
+              )}
+
+              {/* The core interaction of the demo: spend money → spare change rounds up
+                  → sweeps at $5 → buys your framework's ETFs. Independent of real deposits
+                  — this is how round-ups are demonstrated whether or not funds are real. */}
               <button
                 onClick={addPurchase}
                 disabled={buying}
                 style={{
-                  width: "100%", marginTop: 14, padding: "14px 20px",
-                  background: buying ? C.tealActive : C.teal, color: "#fff",
-                  border: "none", borderRadius: 11, cursor: buying ? "default" : "pointer",
-                  fontFamily: sans, fontSize: 13.5, fontWeight: 700,
+                  width: "100%", marginTop: 9, padding: "12px 16px",
+                  background: "transparent", color: buying ? C.faint : C.teal,
+                  border: `1px solid ${buying ? C.line : C.teal}`, borderRadius: 11, cursor: buying ? "default" : "pointer",
+                  fontFamily: sans, fontSize: 14, fontWeight: 600,
                   display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                 }}
               >
-                {buying ? "Rounding up…" : <>Simulate a purchase <ChevronRight size={16} /></>}
+                {buying ? "Rounding up…" : <>Simulate a purchase <ChevronRight size={15} /></>}
               </button>
 
               {/* Real bank feed via Plaid: link once, then Sync pulls actual transactions
@@ -1244,6 +1289,198 @@ function AuthScreen({ signup, login, onBack }) {
             <button onClick={() => { setMode("login"); setError(""); setNotice(""); setDevLink(null); }} style={{ ...textLink, justifyContent:"center", alignSelf:"center" }}>
               Back to sign in
             </button>
+          )}
+        </div>
+      </div>
+    </Frame>
+  );
+}
+
+// Deposit & withdraw: the user's own money, moved from their own bank. Reuses the
+// same Plaid Link session as the transaction feed (see the Real Deposits build spec)
+// — link_bank only shows if that hasn't happened yet; pick_account only shows once,
+// to create the Alpaca ACH relationship; after that it's just deposit/withdraw/history.
+function FundingScreen({ onBack, live, refreshPortfolio, bankLinked, plaidReady, openPlaid }) {
+  const achLinked = !!live?.achLinked;
+  const [step, setStep] = useState(!bankLinked ? "link_bank" : achLinked ? "ready" : "pick_account");
+  const [accounts, setAccounts] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [linking, setLinking] = useState(false);
+  const [depositAmt, setDepositAmt] = useState("25");
+  const [withdrawAmt, setWithdrawAmt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [transfers, setTransfers] = useState([]);
+
+  const loadTransfers = () =>
+    fetch("/api/transfers").then(r => r.ok ? r.json() : null).then(d => { if (d?.transfers) setTransfers(d.transfers); }).catch(() => {});
+
+  // Move forward automatically as each step completes (bank linked → pick an
+  // account → ready), without forcing the user back to Home in between.
+  useEffect(() => {
+    if (!bankLinked) { setStep("link_bank"); return; }
+    if (achLinked) { setStep("ready"); loadTransfers(); return; }
+    setStep("pick_account");
+    setError("");
+    fetch("/api/bank/accounts").then(r => r.json()).then(d => {
+      if (d?.accounts) setAccounts(d.accounts);
+      else if (d?.error) setError(d.error);
+    }).catch(() => setError("Couldn't load your bank accounts."));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bankLinked, achLinked]);
+
+  const linkAccount = async () => {
+    if (!selected) return;
+    setLinking(true); setError("");
+    const r = await fetch("/api/bank/link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bankAccountId: selected }) })
+      .then(r => r.json()).catch(() => null);
+    setLinking(false);
+    if (r?.achRelationshipId) await refreshPortfolio();
+    else setError(r?.error || "Couldn't link that account. Try again.");
+  };
+
+  const deposit = async () => {
+    const amt = Number(depositAmt);
+    if (!amt || amt <= 0) { setError("Enter a valid amount."); return; }
+    setBusy(true); setError(""); setNotice("");
+    const r = await fetch("/api/deposit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: amt }) })
+      .then(r => r.json()).catch(() => null);
+    setBusy(false);
+    if (r?.transfer) { setNotice(`Transfer submitted. ${fmt2(amt)} is on its way.`); await refreshPortfolio(); loadTransfers(); }
+    else setError(r?.error || "Couldn't start that deposit.");
+  };
+
+  const withdraw = async () => {
+    const amt = Number(withdrawAmt);
+    if (!amt || amt <= 0) { setError("Enter a valid amount."); return; }
+    setBusy(true); setError(""); setNotice("");
+    const r = await fetch("/api/withdraw", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: amt }) })
+      .then(r => r.json()).catch(() => null);
+    setBusy(false);
+    if (r?.transfer) { setNotice(`Withdrawal submitted. ${fmt2(amt)} is on its way.`); setWithdrawAmt(""); await refreshPortfolio(); loadTransfers(); }
+    else setError(r?.error || "Couldn't start that withdrawal.");
+  };
+
+  const amountField = (value, onChange, placeholder) => (
+    <div style={{ flex:1, minWidth:0, display:"flex", alignItems:"center", background:C.card, border:`1px solid ${C.line}`, borderRadius:11, padding:"0 14px" }}>
+      <span style={{ fontFamily:sans, fontSize:14, color:C.muted }}>$</span>
+      <input value={value} onChange={e => onChange(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder={placeholder}
+        style={{ flex:1, minWidth:0, border:"none", outline:"none", background:"transparent", fontFamily:sans, fontSize:15, fontWeight:700, color:C.ink, padding:"12px 8px" }} />
+    </div>
+  );
+
+  return (
+    <Frame>
+      <FontInjector />
+      <div style={{ flex:1, display:"flex", flexDirection:"column", background:C.bg, overflow:"hidden" }}>
+        <div style={{ padding:"20px 22px 8px", display:"flex", alignItems:"center", gap:10 }}>
+          <button onClick={onBack} aria-label="Back to home" style={iconBtn}><ChevronLeft size={18} color={C.pine} /></button>
+          <span style={{ fontFamily:sans, fontSize:16, fontWeight:700, color:C.ink, letterSpacing:"-0.01em" }}>Deposit &amp; withdraw</span>
+        </div>
+        <div style={{ flex:1, overflowY:"auto", padding:"12px 22px 24px" }}>
+
+          {step === "link_bank" && (
+            <Card>
+              <Row icon={Landmark} label="Link your bank" />
+              <p style={{ fontFamily:sans, fontSize:13, color:C.muted, lineHeight:1.6, margin:"10px 0 14px" }}>
+                Connect your bank to move your own money into your Steward account. It's the same
+                secure connection your transaction feed already uses.
+              </p>
+              <button onClick={() => plaidReady && openPlaid()} disabled={!plaidReady}
+                style={{ width:"100%", padding:"14px 20px", background:C.teal, color:"#fff", border:"none", borderRadius:11,
+                  cursor:plaidReady?"pointer":"default", fontFamily:sans, fontSize:13.5, fontWeight:700, opacity:plaidReady?1:0.6 }}>
+                Link your bank
+              </button>
+            </Card>
+          )}
+
+          {step === "pick_account" && (
+            <Card>
+              <Row icon={Wallet} label="Choose an account to fund from" />
+              {error && <div style={{ marginTop:10, padding:"10px 12px", background:C.err+"14", borderRadius:10, fontFamily:sans, fontSize:12.5, color:C.err }}>{error}</div>}
+              <div style={{ marginTop:12, display:"grid", gap:8 }}>
+                {accounts.length === 0 && !error && <p style={{ fontFamily:sans, fontSize:13, color:C.muted }}>Loading your accounts…</p>}
+                {accounts.map(a => (
+                  <button key={a.id} onClick={() => setSelected(a.id)}
+                    style={{ ...rowCard, borderWidth:1.5, borderColor:selected===a.id?C.teal:C.line, background:selected===a.id?C.tealTint:C.card }}>
+                    <div style={{ textAlign:"left", flex:1 }}>
+                      <div style={{ fontFamily:sans, fontSize:14, fontWeight:700, color:C.ink }}>{a.name}{a.mask ? ` ····${a.mask}` : ""}</div>
+                      <div style={{ fontFamily:sans, fontSize:12, color:C.muted }}>{a.subtype || "account"}</div>
+                    </div>
+                    {selected === a.id && <Check size={18} color={C.teal} />}
+                  </button>
+                ))}
+              </div>
+              <button onClick={linkAccount} disabled={!selected || linking}
+                style={{ width:"100%", marginTop:14, padding:"14px 20px", background:C.teal, color:"#fff", border:"none", borderRadius:11,
+                  cursor:(!selected||linking)?"default":"pointer", fontFamily:sans, fontSize:13.5, fontWeight:700, opacity:(!selected||linking)?0.6:1 }}>
+                {linking ? "Linking…" : "Use this account"}
+              </button>
+            </Card>
+          )}
+
+          {step === "ready" && (
+            <>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                <KpiTile label="Cash" value={live?.display?.cash ?? fmt(0)} />
+                <KpiTile label="Invested" value={live?.display?.invested ?? fmt(0)} />
+              </div>
+              {live?.display?.pendingDeposit && (
+                <p style={{ fontFamily:sans, fontSize:11.5, color:C.faint, margin:"8px 2px 0" }}>
+                  {live.display.pendingDeposit} in deposits still settling.
+                </p>
+              )}
+
+              {error && <div style={{ marginTop:12, padding:"10px 12px", background:C.err+"14", borderRadius:10, fontFamily:sans, fontSize:12.5, color:C.err }}>{error}</div>}
+              {notice && <div style={{ marginTop:12, padding:"10px 12px", background:C.tealTint, borderRadius:10, fontFamily:sans, fontSize:12.5, color:C.teal }}>{notice}</div>}
+
+              <Card>
+                <Row icon={PiggyBank} label="Deposit" />
+                <div style={{ display:"flex", gap:8, marginTop:12 }}>
+                  {amountField(depositAmt, setDepositAmt, "0.00")}
+                  <button onClick={deposit} disabled={busy}
+                    style={{ flexShrink:0, whiteSpace:"nowrap", padding:"0 18px", background:C.teal, color:"#fff", border:"none", borderRadius:11, cursor:busy?"default":"pointer", fontFamily:sans, fontSize:13.5, fontWeight:700, opacity:busy?0.6:1 }}>
+                    {busy ? "…" : "Deposit"}
+                  </button>
+                </div>
+                <p style={{ fontFamily:sans, fontSize:11.5, color:C.faint, marginTop:8, lineHeight:1.5 }}>
+                  Moves money from your linked bank into your brokerage account. Usually settles within a few business days.
+                </p>
+              </Card>
+
+              <Card>
+                <Row icon={Wallet} label="Withdraw" />
+                <div style={{ display:"flex", gap:8, marginTop:12 }}>
+                  {amountField(withdrawAmt, setWithdrawAmt, "0.00")}
+                  <button onClick={withdraw} disabled={busy}
+                    style={{ flexShrink:0, whiteSpace:"nowrap", padding:"0 18px", background:"transparent", color:C.teal, border:`1px solid ${C.teal}`, borderRadius:11, cursor:busy?"default":"pointer", fontFamily:sans, fontSize:13.5, fontWeight:700, opacity:busy?0.6:1 }}>
+                    {busy ? "…" : "Withdraw"}
+                  </button>
+                </div>
+              </Card>
+
+              <Card>
+                <Row icon={Receipt} label="Transfer history" />
+                {transfers.length === 0 ? (
+                  <p style={{ fontFamily:sans, fontSize:13, color:C.muted, marginTop:10 }}>No transfers yet.</p>
+                ) : (
+                  <div style={{ marginTop:8 }}>
+                    {transfers.map((t, i) => (
+                      <div key={t.id ?? i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:i<transfers.length-1?`1px solid ${C.divider}`:"none" }}>
+                        <div>
+                          <div style={{ fontFamily:sans, fontSize:13.5, fontWeight:600, color:C.ink }}>{t.direction === "OUTGOING" ? "Withdrawal" : "Deposit"}</div>
+                          <div style={{ fontFamily:sans, fontSize:11.5, color:C.faint }}>{new Date(t.ts).toLocaleDateString("en-US", { month:"short", day:"numeric" })} · {t.status}</div>
+                        </div>
+                        <span style={{ fontFamily:sans, fontSize:14, fontWeight:700, color:t.direction==="OUTGOING"?C.err:C.teal }}>
+                          {t.direction==="OUTGOING"?"−":"+"}{t.display}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </>
           )}
         </div>
       </div>

@@ -14,9 +14,10 @@ import { fileURLToPath } from "node:url";
 
 import * as db from "./lib/db.js";
 import { hashPassword, verifyPassword, newToken, sessionFromCookie, sessionCookie, validateCredentials, validateProfile } from "./lib/auth.js";
-import { alpacaEnabled, createBrokerageAccount, fundIfActive, fundViaAch, createCharityAccount, journalFirmTo, findExistingCharityAccount } from "./lib/account-service.js";
-import { plaidEnabled, createLinkToken, exchangePublicToken, fetchTransactions } from "./lib/plaid.js";
+import { alpacaEnabled, createBrokerageAccount, fundIfActive, fundViaAch, createCharityAccount, journalFirmTo, findExistingCharityAccount, createAchRelationshipFromPlaid, listAchRelationships, createDeposit, createWithdrawal, listTransfers } from "./lib/account-service.js";
+import { plaidEnabled, createLinkToken, exchangePublicToken, fetchTransactions, listBankAccounts, createAlpacaProcessorToken } from "./lib/plaid.js";
 import { recordPurchase, retryPending, rebalance, summary } from "./lib/portfolio.js";
+import { fromCents } from "./lib/roundup.js";
 import { FakeBroker, AlpacaBroker } from "./lib/broker.js";
 import { authFromEnv, makeRequester } from "./lib/alpaca-auth.js";
 import { randomPurchase } from "./lib/feed.js";
@@ -39,6 +40,13 @@ const usesAlpaca = (user) => ALPACA && !!user.alpacaAccountId;
 const brokerFor = (user) => (usesAlpaca(user) ? alpacaBroker : fakeBroker);
 const modeFor = (user) => (usesAlpaca(user) ? "alpaca" : "fake");
 
+// Real Deposits: the app used to gift every new sandbox account $100 of OUR money
+// (fundIfActive, below) so demos work instantly. In production that same code
+// hands every signup real company money — a hundred signups is ten thousand
+// dollars, gone. This flag makes the auto-gift opt-in and off by default; a real
+// deployment should never set it. Set it in Render ONLY for this sandbox demo.
+const AUTO_FUND = process.env.AUTO_FUND_NEW_ACCOUNTS === "1";
+
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 function sendJson(res, code, body, extraHeaders = {}) {
   res.writeHead(code, { "Content-Type": "application/json", ...extraHeaders });
@@ -48,6 +56,17 @@ async function readBody(req) {
   let raw = "";
   for await (const chunk of req) raw += chunk;
   try { return raw ? JSON.parse(raw) : {}; } catch { return null; }
+}
+// Never trust a dollar amount from the browser: must be a finite positive number,
+// converts cleanly to integer cents, and stays under a sane per-transfer cap (a
+// placeholder sanity limit, not a regulatory one — tune as needed).
+const MAX_TRANSFER_CENTS = 25_000 * 100;
+function validAmountCents(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const cents = Math.round(n * 100);
+  if (cents <= 0 || cents > MAX_TRANSFER_CENTS) return null;
+  return cents;
 }
 function currentUser(req) {
   const token = sessionFromCookie(req.headers.cookie);
@@ -72,7 +91,11 @@ async function snapshotFor(user) {
       const pos = await alpacaReq("GET", `/v1/trading/accounts/${user.alpacaAccountId}/positions/${sym}`);
       positionValueCents = Math.round(Number(pos.market_value ?? 0) * 100);
     } catch { /* no position yet */ }
-    return { portfolioValueCents: Math.round(Number(acct.portfolio_value ?? 0) * 100), positionValueCents };
+    return {
+      portfolioValueCents: Math.round(Number(acct.portfolio_value ?? 0) * 100),
+      positionValueCents,
+      cashCents: Math.round(Number(acct.cash ?? 0) * 100),
+    };
   } catch { return null; }
 }
 
@@ -189,7 +212,9 @@ const charityShort = () => (charityId ? charityId.slice(0, 8) + "…" : null);
 async function settleUser(user) {
   if (!usesAlpaca(user)) return false;
   let changed = false;
-  if (!user.funded) {
+  // AUTO_FUND-gated: this whole block gives the user OUR money (sandbox demo
+  // convenience). In production it's off, and stays off — see AUTO_FUND above.
+  if (AUTO_FUND && !user.funded) {
     const f = await fundIfActive(user.alpacaAccountId);
     if (f.method === "journal") {
       user.funded = true; user.fundingMethod = "journal"; changed = true;
@@ -354,7 +379,8 @@ const server = createServer(async (req, res) => {
 
   // ===== everything below requires a session =====
   const authRoutes = ["/api/profile", "/api/portfolio", "/api/purchase", "/api/config",
-                      "/api/plaid/link-token", "/api/plaid/exchange", "/api/plaid/sync", "/api/audit", "/api/verify/request"];
+                      "/api/plaid/link-token", "/api/plaid/exchange", "/api/plaid/sync", "/api/audit", "/api/verify/request",
+                      "/api/bank/accounts", "/api/bank/link", "/api/deposit", "/api/withdraw", "/api/transfers"];
   if (authRoutes.includes(path)) {
     const user = currentUser(req);
     if (!user) return sendJson(res, 401, { error: "not signed in" });
@@ -392,14 +418,22 @@ const server = createServer(async (req, res) => {
         try {
           const acct = await createBrokerageAccount(user.profile);
           user.alpacaAccountId = acct.id;
-          user.fundingStartedAt = Date.now();
           accountStatus = acct.status;
           db.audit(user, "brokerage_account_created", { account: acct.id, status: acct.status });
-          // New sandbox accounts are SUBMITTED for a couple minutes before they go
-          // ACTIVE and can be journal-funded. Try now (instant if already active);
-          // otherwise the background loop funds it the moment it activates.
-          funding = await fundIfActive(acct.id);
-          user.funded = funding.method === "journal";
+          if (AUTO_FUND) {
+            // Sandbox-only convenience: gift a starting balance so a demo doesn't
+            // require linking a real bank first. New sandbox accounts are SUBMITTED
+            // for a couple minutes before they go ACTIVE and can be journal-funded.
+            // Try now (instant if already active); otherwise the background loop
+            // funds it the moment it activates.
+            user.fundingStartedAt = Date.now();
+            funding = await fundIfActive(acct.id);
+            user.funded = funding.method === "journal";
+          } else {
+            // Production path: the account starts at $0. The user funds it
+            // themselves from their own bank via /api/deposit.
+            funding = { method: "user_funded", status: "awaiting_deposit" };
+          }
         } catch (e) {
           accountError = String(e.message).split("\n")[0];
         }
@@ -491,6 +525,117 @@ const server = createServer(async (req, res) => {
       } catch (e) {
         return sendJson(res, 502, { error: String(e.response?.data?.error_message || e.message).split("\n")[0] });
       }
+    }
+
+    // ═══ Real Deposits: user's own money, from their own bank ═══════════════════
+    // Same Plaid Link session as above (user.plaidAccess) — no second bank-linking
+    // popup. See "Real Deposits Build Spec" for the full flow.
+
+    // ---- list the user's bank accounts, so they can pick which one to fund from ----
+    if (req.method === "GET" && path === "/api/bank/accounts") {
+      if (!plaidEnabled()) return sendJson(res, 400, { error: "Plaid is not configured." });
+      if (!user.plaidAccess) return sendJson(res, 400, { error: "Link your bank first." });
+      try {
+        const accounts = await listBankAccounts(user.plaidAccess.accessToken);
+        return sendJson(res, 200, { accounts });
+      } catch (e) {
+        return sendJson(res, 502, { error: String(e.response?.data?.error_message || e.message).split("\n")[0] });
+      }
+    }
+
+    // ---- link a chosen bank account for funding (processor token → ACH relationship) ----
+    if (req.method === "POST" && path === "/api/bank/link") {
+      if (!plaidEnabled()) return sendJson(res, 400, { error: "Plaid is not configured." });
+      if (!user.plaidAccess) return sendJson(res, 400, { error: "Link your bank first." });
+      if (!user.alpacaAccountId) return sendJson(res, 400, { error: "Open your brokerage account first." });
+      const body = await readBody(req);
+      if (!body?.bankAccountId) return sendJson(res, 400, { error: "bankAccountId required" });
+      try {
+        // Don't create a duplicate relationship — reuse one if it already exists.
+        if (!user.achRelationshipId) {
+          const existing = await listAchRelationships(user.alpacaAccountId);
+          const usable = (Array.isArray(existing) ? existing : [])
+            .find((r) => !["CANCEL", "REJECTED", "CLOSED"].includes(String(r.status).toUpperCase()));
+          if (usable) {
+            user.achRelationshipId = usable.id;
+          } else {
+            const processorToken = await createAlpacaProcessorToken(user.plaidAccess.accessToken, body.bankAccountId);
+            const rel = await createAchRelationshipFromPlaid(user.alpacaAccountId, processorToken);
+            user.achRelationshipId = rel.id;
+          }
+          db.audit(user, "bank_linked_for_funding", { relationship: user.achRelationshipId });
+          db.saveUser(user);
+        }
+        return sendJson(res, 200, { achRelationshipId: user.achRelationshipId });
+      } catch (e) {
+        return sendJson(res, 502, { error: String(e.response?.data?.error_message || e.message).split("\n")[0] });
+      }
+    }
+
+    // ---- deposit: user's bank -> their brokerage account ----
+    if (req.method === "POST" && path === "/api/deposit") {
+      if (!user.alpacaAccountId) return sendJson(res, 400, { error: "Open your brokerage account first." });
+      if (!user.achRelationshipId) return sendJson(res, 400, { error: "Link a bank account for funding first." });
+      const body = await readBody(req);
+      const cents = validAmountCents(body?.amount);
+      if (!cents) return sendJson(res, 400, { error: "Enter a valid amount." });
+      try {
+        const t = await createDeposit(user.alpacaAccountId, user.achRelationshipId, cents);
+        user.transfers = user.transfers ?? [];
+        user.transfers.push({ id: t.id, direction: "INCOMING", status: t.status, amountCents: cents, ts: Date.now() });
+        db.audit(user, "deposit_created", { cents, transferId: t.id });
+        db.saveUser(user);
+        return sendJson(res, 200, {
+          transfer: { id: t.id, status: t.status },
+          ...summary(user, { mode: modeFor(user), charity: charityShort(), alpacaSnapshot: await snapshotFor(user) }),
+        });
+      } catch (e) {
+        return sendJson(res, 502, { error: String(e.response?.data?.error_message || e.message).split("\n")[0] });
+      }
+    }
+
+    // ---- withdraw: brokerage account -> user's bank ----
+    if (req.method === "POST" && path === "/api/withdraw") {
+      if (!user.alpacaAccountId) return sendJson(res, 400, { error: "Open your brokerage account first." });
+      if (!user.achRelationshipId) return sendJson(res, 400, { error: "Link a bank account for funding first." });
+      const body = await readBody(req);
+      const cents = validAmountCents(body?.amount);
+      if (!cents) return sendJson(res, 400, { error: "Enter a valid amount." });
+      try {
+        const t = await createWithdrawal(user.alpacaAccountId, user.achRelationshipId, cents);
+        user.transfers = user.transfers ?? [];
+        user.transfers.push({ id: t.id, direction: "OUTGOING", status: t.status, amountCents: cents, ts: Date.now() });
+        db.audit(user, "withdrawal_created", { cents, transferId: t.id });
+        db.saveUser(user);
+        return sendJson(res, 200, {
+          transfer: { id: t.id, status: t.status },
+          ...summary(user, { mode: modeFor(user), charity: charityShort(), alpacaSnapshot: await snapshotFor(user) }),
+        });
+      } catch (e) {
+        return sendJson(res, 502, { error: String(e.response?.data?.error_message || e.message).split("\n")[0] });
+      }
+    }
+
+    // ---- transfer history: fresh status from Alpaca, merged into our local mirror ----
+    if (req.method === "GET" && path === "/api/transfers") {
+      if (!user.alpacaAccountId) return sendJson(res, 200, { transfers: [] });
+      try {
+        const remote = await listTransfers(user.alpacaAccountId);
+        const byId = new Map((Array.isArray(remote) ? remote : []).map((t) => [t.id, t]));
+        user.transfers = (user.transfers ?? []).map((t) => {
+          const fresh = byId.get(t.id);
+          return fresh ? { ...t, status: fresh.status } : t;
+        });
+        db.saveUser(user);
+      } catch (e) {
+        captureError(e, "listTransfers");
+      }
+      return sendJson(res, 200, {
+        transfers: (user.transfers ?? []).slice(-20).reverse().map((t) => ({
+          id: t.id, direction: t.direction, status: t.status,
+          amountCents: t.amountCents, display: fromCents(t.amountCents), ts: t.ts,
+        })),
+      });
     }
   }
 

@@ -265,3 +265,48 @@ export async function fundIfActive(accountId, amount = FUND_AMOUNT) {
     return { method: "pending", status: "journal_error", error: String(e.message).split("\n")[0] };
   }
 }
+
+// ── Real deposits: user's own money, via Plaid ───────────────────────────────
+//
+// The functions above (journalFund/achFund/fundIfActive) move OUR money into a
+// user's account — correct for a sandbox demo, wrong once real people sign up (see
+// "Real Deposits Build Spec"). These functions move the USER's own money, from
+// their own bank, via the official Plaid↔Alpaca ACH handshake. We never touch it.
+
+/** Real ACH relationship, created from a Plaid processor token. Production path. */
+export async function createAchRelationshipFromPlaid(accountId, processorToken) {
+  const req = requester();
+  return req("POST", `/v1/accounts/${accountId}/ach_relationships`, {
+    processor_token: processorToken,
+  });
+}
+
+/** List a user's existing ACH relationships (so we don't create duplicates). */
+export async function listAchRelationships(accountId) {
+  return requester()("GET", `/v1/accounts/${accountId}/ach_relationships`);
+}
+
+/** Move money: user's bank -> their brokerage account. amountCents -> "25.00" */
+export async function createDeposit(accountId, relationshipId, amountCents) {
+  return requester()("POST", `/v1/accounts/${accountId}/transfers`, {
+    transfer_type: "ach",
+    relationship_id: relationshipId,
+    amount: (amountCents / 100).toFixed(2),
+    direction: "INCOMING",
+  });
+}
+
+/** Money out: brokerage account -> user's bank. */
+export async function createWithdrawal(accountId, relationshipId, amountCents) {
+  return requester()("POST", `/v1/accounts/${accountId}/transfers`, {
+    transfer_type: "ach",
+    relationship_id: relationshipId,
+    amount: (amountCents / 100).toFixed(2),
+    direction: "OUTGOING",
+  });
+}
+
+/** All transfers for an account, for the history list and status polling. */
+export async function listTransfers(accountId) {
+  return requester()("GET", `/v1/accounts/${accountId}/transfers`);
+}

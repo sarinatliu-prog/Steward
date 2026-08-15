@@ -99,6 +99,14 @@ export function summary(user, { mode, alpacaSnapshot, charity } = {}) {
     alpacaSnapshot && alpacaSnapshot.positionValueCents > 0 ? alpacaSnapshot.positionValueCents : user.investedCents;
   const annualDonationCents = Math.round((roundupsThisMonthCents * 12 * user.config.tithePct) / 100);
 
+  // Real funding fields. `?? []`/`?? null` because users created before this shipped
+  // won't have them on their stored record.
+  const cashCents = alpacaSnapshot?.cashCents ?? 0;
+  const transfers = user.transfers ?? [];
+  const pendingDepositCents = transfers
+    .filter((t) => t.direction === "INCOMING" && !["FILLED", "COMPLETE", "SETTLED", "CANCELED", "REJECTED", "RETURNED"].includes(String(t.status).toUpperCase()))
+    .reduce((s, t) => s + t.amountCents, 0);
+
   return {
     mode: mode ?? "fake",
     etf: user.config.holdings[0]?.symbol ?? "ESGV",
@@ -117,6 +125,16 @@ export function summary(user, { mode, alpacaSnapshot, charity } = {}) {
     annualDonationCents,
     ordersPlaced: user.orders.length,
     txCount: user.transactions.length,
+    // Real funding: the user's own cash (from Alpaca), whether a funding bank is
+    // linked, and their recent transfers for the deposit/withdraw screen.
+    cashCents,
+    achLinked: !!user.achRelationshipId,
+    bankName: user.bankName ?? null,
+    pendingDepositCents,
+    transfers: transfers.slice(-20).reverse().map((t) => ({
+      id: t.id, direction: t.direction, status: t.status,
+      amountCents: t.amountCents, display: fromCents(t.amountCents), ts: t.ts,
+    })),
     holdings: user.config.holdings.map((h) => ({
       symbol: h.symbol, targetPct: h.a,
       investedCents: user.investedBySymbol[h.symbol] ?? 0,
@@ -137,6 +155,8 @@ export function summary(user, { mode, alpacaSnapshot, charity } = {}) {
       donated: fromCents(user.donatedCents ?? 0),
       roundupsThisMonth: fromCents(roundupsThisMonthCents),
       annualDonation: fromCents(annualDonationCents),
+      cash: fromCents(cashCents),
+      pendingDeposit: pendingDepositCents > 0 ? fromCents(pendingDepositCents) : null,
     },
   };
 }

@@ -8,10 +8,14 @@
 //   PLAID_SECRET=...            (the "sandbox" secret)
 //   PLAID_ENV=sandbox          (sandbox | development | production)
 //
-// The three jobs:
+// The three original jobs:
 //   1. createLinkToken(userId)      — start a bank-linking session (temporary link token)
 //   2. exchangePublicToken(token)   — finish the link → a saved access token for that user
 //   3. fetchTransactions(access, cursor) — pull new transactions since last time
+//
+// Plus two for real funding (see server/lib/account-service.js for the Alpaca side):
+//   4. listBankAccounts(access)                    — which of the user's bank accounts to fund from
+//   5. createAlpacaProcessorToken(access, acctId)   — the official Plaid↔Alpaca funding handshake
 
 import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } from "plaid";
 
@@ -44,7 +48,10 @@ export async function createLinkToken(userId) {
   const res = await client().linkTokenCreate({
     user: { client_user_id: String(userId) },
     client_name: "Good Steward",
-    products: [Products.Transactions],
+    // Transactions for the round-up feed; Auth so the SAME Link session can also
+    // produce the account/routing data Alpaca needs for real ACH funding later —
+    // no second bank-linking popup required.
+    products: [Products.Transactions, Products.Auth],
     country_codes: [CountryCode.Us],
     language: "en",
   });
@@ -91,4 +98,33 @@ export async function fetchTransactions(accessToken, cursor = null) {
     hasMore = res.data.has_more;
   }
   return { transactions: added, cursor: nextCursor };
+}
+
+/**
+ * 4. List the user's bank accounts (checking/savings) so they can pick which one to
+ *    fund from — most people have more than one on a single linked Item.
+ */
+export async function listBankAccounts(accessToken) {
+  const res = await client().accountsGet({ access_token: accessToken });
+  return (res.data.accounts || []).map((a) => ({
+    id: a.account_id,
+    name: a.official_name || a.name || "Account",
+    mask: a.mask || null,
+    subtype: a.subtype || a.type || null,
+  }));
+}
+
+/**
+ * 5. Alpaca can't use a raw Plaid access token — it needs a "processor token" minted
+ *    specifically for them. This is the official Plaid↔Alpaca funding handshake.
+ *    `accountId` is the Plaid BANK account id (from listBankAccounts), not the Alpaca
+ *    brokerage account id.
+ */
+export async function createAlpacaProcessorToken(accessToken, accountId) {
+  const res = await client().processorTokenCreate({
+    access_token: accessToken,
+    account_id: accountId,
+    processor: "alpaca",
+  });
+  return res.data.processor_token;
 }

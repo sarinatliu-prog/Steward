@@ -145,6 +145,12 @@ export function createUser({ email, passHash, salt }) {
     // remembers which transactions we've already counted (so nothing double-counts).
     plaidAccess: null,   // { accessToken, itemId } once a bank is linked
     plaidCursor: null,   // Plaid /transactions/sync cursor
+    // Real funding: the Alpaca ACH relationship created from a Plaid processor
+    // token (see server/lib/account-service.js), once the user picks a bank
+    // account to fund from. `transfers` mirrors deposits/withdrawals for the UI.
+    achRelationshipId: null,
+    bankName: null,
+    transfers: [],
     // per-user portfolio state
     config: {
       framework: "Broad Ethical",
