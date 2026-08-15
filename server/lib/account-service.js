@@ -51,6 +51,25 @@ function accountPayload(profile) {
   };
 }
 
+/**
+ * Look for a charitable account we already created, by the marker in its email.
+ * This is the self-healing path: even if our stored id is lost (restart, DB blip,
+ * fresh deploy), we adopt the existing account instead of opening another one.
+ */
+export async function findExistingCharityAccount() {
+  try {
+    const accounts = await requester()("GET", "/v1/accounts?status=ACTIVE,SUBMITTED,APPROVED");
+    const list = Array.isArray(accounts) ? accounts : [];
+    const hits = list.filter((a) => String(a.contact?.email_address || a.email_address || "").startsWith("steward.charity+"));
+    if (!hits.length) return null;
+    // Oldest first, so everyone converges on the same account.
+    hits.sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+    return { id: hits[0].id, status: hits[0].status, duplicates: hits.length };
+  } catch {
+    return null;
+  }
+}
+
 // Create the account. Returns { id, accountNumber, status }.
 export async function createBrokerageAccount(profile) {
   const req = requester();

@@ -116,6 +116,13 @@ function save() {
   renameSync(tmp, FILE); // atomic replace
 }
 
+/** Persist right now rather than waiting for the interval. Used for writes we can't
+ *  afford to lose to a restart — e.g. the charitable account id. */
+export async function flushNow() {
+  if (pool) await flush();
+  else save();
+}
+
 /** Force a final write (called on shutdown so we don't lose the last few seconds). */
 export async function closeDb() {
   if (pool) {

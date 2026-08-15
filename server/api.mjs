@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 import * as db from "./lib/db.js";
 import { hashPassword, verifyPassword, newToken, sessionFromCookie, sessionCookie, validateCredentials, validateProfile } from "./lib/auth.js";
-import { alpacaEnabled, createBrokerageAccount, fundIfActive, fundViaAch, createCharityAccount, journalFirmTo } from "./lib/account-service.js";
+import { alpacaEnabled, createBrokerageAccount, fundIfActive, fundViaAch, createCharityAccount, journalFirmTo, findExistingCharityAccount } from "./lib/account-service.js";
 import { plaidEnabled, createLinkToken, exchangePublicToken, fetchTransactions } from "./lib/plaid.js";
 import { recordPurchase, retryPending, rebalance, summary } from "./lib/portfolio.js";
 import { FakeBroker, AlpacaBroker } from "./lib/broker.js";
@@ -107,20 +107,50 @@ const loginOk = (key) => loginAttempts.delete(key);
 // then persisted meta, else created once and remembered. The residue therefore
 // accumulates in Alpaca's books — visible in the Broker dashboard — not just ours.
 let charityId = process.env.ALPACA_CHARITY_ACCOUNT_ID || null;
+// Single-flight: getCharityId is async and called from several places (each sweep,
+// the settle loop, every user). Without this guard two concurrent callers both see
+// "no charity yet" and each opens an account — which is how we ended up with several.
+let charityInFlight = null;
+
 async function getCharityId() {
   if (!ALPACA) return null;
   if (charityId) return charityId;
-  const stored = db.getMeta("charityAccountId");
-  if (stored) { charityId = stored; return charityId; }
-  try {
+  if (charityInFlight) return charityInFlight;   // a resolve is already running — join it
+
+  charityInFlight = (async () => {
+    // 1. Explicit override always wins.
+    if (process.env.ALPACA_CHARITY_ACCOUNT_ID) return process.env.ALPACA_CHARITY_ACCOUNT_ID;
+
+    // 2. Remembered from a previous run.
+    const stored = db.getMeta("charityAccountId");
+    if (stored) return stored;
+
+    // 3. Ask Alpaca whether we already made one. Self-healing when our stored id was
+    //    lost to a restart — adopt the existing account rather than opening another.
+    const found = await findExistingCharityAccount();
+    if (found) {
+      if (found.duplicates > 1) {
+        console.warn(`charity: ${found.duplicates} charitable accounts exist; using the oldest (${found.id}). Consider closing the extras.`);
+      }
+      db.setMeta("charityAccountId", found.id);
+      await db.flushNow();
+      console.log(`charity: adopted existing charitable account ${found.id}`);
+      return found.id;
+    }
+
+    // 4. Genuinely none — create one, and persist the id immediately so a restart
+    //    in the next few seconds can't cause a duplicate.
     const acct = await createCharityAccount();
     db.setMeta("charityAccountId", acct.id);
-    charityId = acct.id;
+    await db.flushNow();
     console.log(`charity: created charitable account ${acct.id} (${acct.status})`);
-  } catch (e) {
-    captureError(e, "createCharityAccount");
-  }
-  return charityId;
+    return acct.id;
+  })()
+    .then((id) => { charityId = id; return id; })
+    .catch((e) => { captureError(e, "getCharityId"); return null; })
+    .finally(() => { charityInFlight = null; });
+
+  return charityInFlight;
 }
 
 // Route any queued residue to the charitable account. Real journal for Alpaca users;
