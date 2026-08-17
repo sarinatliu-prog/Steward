@@ -16,28 +16,51 @@ function splitByAllocation(total, holdings) {
 // The account key passed to broker.invest: real Alpaca account id, or user id.
 const acctKey = (user) => user.alpacaAccountId || user.id;
 
+// Alpaca rejects any notional order under $1.00 ("notional amount must be >= 1.00").
+// A $5 sweep split 45/25/20/10 produces slices like $0.90 and $0.45, so the smaller
+// holdings could never be bought — the money stuck pending and the retry loop hammered
+// the API forever. So we accumulate per symbol and only place an order once that
+// symbol has reached the $1 minimum. Target allocations still hold over time; the
+// small holdings just fill every few sweeps instead of every sweep.
+const MIN_NOTIONAL_CENTS = 100;
+
 // Invest queued money across the user's chosen ETFs. Fake broker fills instantly;
-// real Alpaca leaves the remainder queued if funds haven't settled (403).
+// real Alpaca leaves a symbol queued if funds haven't settled (403).
 async function flushPending(user, broker) {
   if (user.pendingInvestCents <= 0) return;
-  const total = user.pendingInvestCents;
-  let placed = 0;
-  try {
-    for (const { symbol, amount } of splitByAllocation(total, user.config.holdings)) {
+  user.pendingBySymbol = user.pendingBySymbol ?? {};
+
+  // Spread any money that hasn't been assigned to a symbol yet across the targets,
+  // adding to whatever remainder each symbol carried from earlier sweeps.
+  const alreadyAllocated = Object.values(user.pendingBySymbol).reduce((s, x) => s + x, 0);
+  const unallocated = user.pendingInvestCents - alreadyAllocated;
+  if (unallocated > 0) {
+    for (const { symbol, amount } of splitByAllocation(unallocated, user.config.holdings)) {
       if (amount <= 0) continue;
+      user.pendingBySymbol[symbol] = (user.pendingBySymbol[symbol] ?? 0) + amount;
+    }
+  }
+
+  // Place an order for every symbol that has crossed the minimum. The try/catch is
+  // INSIDE the loop on purpose: one symbol failing must not block the others.
+  for (const [symbol, amount] of Object.entries(user.pendingBySymbol)) {
+    if (amount < MIN_NOTIONAL_CENTS) continue; // keep accumulating
+    try {
       const order = await broker.invest(acctKey(user), amount, symbol);
       user.investedBySymbol[symbol] = (user.investedBySymbol[symbol] ?? 0) + amount;
       user.investedCents += amount;
-      placed += amount;
+      user.pendingBySymbol[symbol] = 0;
       user.orders.push({ id: order.id, symbol, notionalCents: amount, status: order.status ?? "accepted", ts: Date.now() });
+    } catch (err) {
+      const msg = String(err.message);
+      if (!msg.includes("insufficient buying power")) {
+        console.warn(`order attempt failed (${symbol}):`, msg.split("\n")[0]);
+      }
+      // leave this symbol pending and try the rest
     }
-  } catch (err) {
-    if (!String(err.message).includes("insufficient buying power")) {
-      console.warn("order attempt failed:", String(err.message).split("\n")[0]);
-    }
-  } finally {
-    user.pendingInvestCents = total - placed;
   }
+
+  user.pendingInvestCents = Object.values(user.pendingBySymbol).reduce((s, x) => s + x, 0);
 }
 
 // Record a purchase → round-up → clearing → maybe sweep. On a sweep, the tithe %

@@ -162,6 +162,7 @@ export function createUser({ email, passHash, salt }) {
     investedCents: 0,
     investedBySymbol: {},
     pendingInvestCents: 0,
+    pendingBySymbol: {},   // per-symbol remainder waiting to reach Alpaca's $1 minimum
     orders: [],
   };
   db.byEmail[email.toLowerCase()] = id;
