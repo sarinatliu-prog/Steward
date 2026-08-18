@@ -100,67 +100,132 @@ This also reduces order volume, which softens the fractional-share exposure.
 
 ---
 
-# Rail 2 — Giving
+# Rail 2 — Giving (the RoundUp.org model)
 
-## The question that decides the whole design
+RoundUp.org has already solved this exact problem in production, and their structure is
+worth copying almost exactly. It also **corrects an assumption I had wrong earlier in this
+document**: I flagged "platform collects from the user, then remits to a sponsor" as
+money-transmission risk to be avoided. RoundUp.org does precisely that, at scale, as an
+approved Visa/Mastercard partner. See "Why this isn't money transmission" below.
 
-**Who is the payer of record, and does money ever rest with us?**
+## How their model works
 
-If Steward charges the user and then remits to a sponsor, we are holding funds belonging
-to others for transmission to a third party. That is the money transmitter fact pattern:
-state-by-state licensing, surety bonds, minimum capital, audits. **Worse than the RIA
-problem we started with.**
+1. Donor links a Visa or Mastercard. Round-ups are calculated from **card transaction
+   data**, not a bank feed.
+2. Round-ups accrue as **a number only**. No money moves during the month.
+3. On the 1st, **one card charge via Stripe** for the prior month's total.
+4. That charge, net of fees, goes to **Our Change Foundation** — a third-party 501(c)(3)
+   public charity and DAF sponsor.
+5. The foundation distributes to the donor's chosen nonprofit by ACH or check, around the
+   15th, and issues the tax receipt.
 
-If the sponsor (or their processor) charges the user directly, with the user as payer of
-record and the sponsor as recipient, we are a referrer and never touch the money.
+**Their economics:** $10 monthly minimum (charged even if round-ups total less), optional
+donor-set cap, $2 platform fee per donation on a ~$32 average, nonprofit nets ~85% after
+card processing and DAF admin. The DAF absorbs processing costs.
 
-Every vendor below must be evaluated against that single question first. Note the trap:
-[Goodstack's Donations API](https://docs.goodstack.io/docs/guides/Monetary%20donations/donations-api)
-describes creating donation records and Goodstack then **"request[ing] payment from you"** —
-which reads as *platform-funded*, i.e. we collect from users and pay them. That is the
-model we must not accept without restructuring. Ask each vendor for the donor-direct flow
-explicitly.
+## Why this isn't money transmission
 
-## Candidate sponsors
+The likely mechanism is the **agent-of-payee exemption**, which most state money
+transmitter statutes carry: if the platform is the authorized agent of the payee (the
+charity), and payment to the agent discharges the payer's obligation, the platform isn't
+transmitting money — it's collecting on the payee's behalf. This is the standard structure
+for donation platforms.
+
+**Confirm it, don't assume it.** The exemption's wording varies by state and depends on a
+written agency agreement with the sponsor. It is a specific, cheap question for counsel,
+and the answer determines the entire rail.
+
+## What we copy, and what we change
+
+**Copy:** accrue as a figure, single monthly charge, third-party DAF as recipient and
+disburser, monthly minimum, donor-set cap, receipts from the sponsor.
+
+**Change:** RoundUp.org needs Visa/Mastercard partner status because card transaction data
+is their only input. **We already have Plaid reading transactions.** We can compute
+round-ups from Plaid and charge a card on file through Stripe — same result, no card-network
+approval, using a piece we have already built and tested.
+
+Card-linking is worth revisiting later for accuracy and because it avoids bank
+credentials, but it is not a launch dependency and I would not start there.
+
+## Design decisions their FAQ forces us to make
+
+| Decision | Their answer | Ours |
+|---|---|---|
+| Monthly minimum | $10, charged even if round-ups are less | Needed — micro-amounts don't clear card fees. Pick a number and say it plainly at signup |
+| Donor cap | Optional, changeable | Copy it. Removes the main objection to linking a card |
+| One nonprofit or many | One at a time | One is simpler and matches their finding |
+| Purchases ending in .00 | Round up $1.00 | Copy it, and say so — otherwise it reads as a bug |
+| Data exposure | Category + last 2 digits only | Copy. Steward's whole premise is not overstating; minimising what we see is on-brand |
+| Failed charge | Retry, then pause the account | Copy |
+
+## Sponsor: third party, or our own?
+
+**Elevate Opportunity Inc.** — articles filed, no charity filings yet — could eventually be
+our own DAF sponsor, capturing the whole rail. Worth noting first: **RoundUp.org didn't do
+this.** They use a third-party foundation. That is a meaningful signal about the cost.
+
+To sponsor donor-advised funds, an entity must be a 501(c)(3) **public charity** (not a
+private foundation) that maintains DAFs. That means:
+
+- Form 1023 (full, not 1023-EZ) and an IRS determination letter — **typically 3–12 months**
+- Meeting a public support test, which is a real constraint on a brand-new organisation
+- DAF-specific excise rules: IRC §4966 (taxable distributions), §4967 (prohibited benefits),
+  §4958 (excess benefit transactions) — and DAF regulation has been under active IRS
+  attention, so this is a moving target
+- Form 990 with Schedule D for donor-advised funds
+- **State charitable solicitation registration in ~40 states — this becomes ours, not the
+  sponsor's**
+- An independent board, conflict-of-interest policy, grant due diligence on every recipient,
+  and fund accounting
+
+That is a real organisation to operate, not a filing.
+
+**Recommendation: launch on a third-party sponsor, build Elevate Opportunity in parallel.**
+
+- We cannot wait 3–12 months for a determination letter to ship anything.
+- Even RoundUp.org, at scale, chose not to run their own.
+- Operating on someone else's rail first teaches us what the obligations actually are
+  before we assume them.
+- If Elevate gets its determination, migrating the sponsor is a vendor swap behind one
+  interface — which is why Phase 3 puts it behind a `GivingSponsor` abstraction.
+
+**A cheaper interim role for Elevate:** it does not have to be the *sponsor*. It could be
+the designated *recipient* nonprofit, or work under a **fiscal sponsor** — an existing
+501(c)(3) that accepts funds on a project's behalf for a fee, typically 5–8%. That gets
+Elevate operating in months rather than a year, without the DAF-sponsor burden.
+
+## Candidate third-party sponsors
 
 | Option | Model | Why it might fit | What to check |
 |---|---|---|---|
-| **[Goodstack](https://goodstack.io/) (formerly Percent)** | Donation API; vets causes and disburses | Explicitly supports **round-ups in-app** as a donation type; owns nonprofit onboarding through disbursement; 13M+ causes | The payer-of-record question above. Whether a donor-direct flow exists, or only platform-funded |
-| **[Every.org](https://docs.every.org/docs/intro)** | Free nonprofit/donation APIs; 501(c)(3) | Free APIs, 1M+ nonprofits searchable, donate-link and donate-button flows put the charge on their side | Whether the API supports programmatic recurring/threshold donations, not just hosted links. Their docs don't state fund custody — ask directly |
-| **[Daffy](https://www.daffy.org/)** | Modern DAF, low minimums, flat monthly fee | Built for small amounts, which is exactly our shape; the user owns the DAF so they are unambiguously the donor | API availability for third-party apps is not clearly public — treat as unconfirmed until they confirm |
-| **[Endaoment](https://endaoment.org/)** | Onchain DAF, 501(c)(3) | Explicitly serves fintech platforms with custom integrations, SSO, and white-label | Onchain settlement may be a poor fit for a spare-change consumer product; check fiat-in/fiat-out |
-| **Charityvest** | DAF for individuals and companies | Another low-minimum DAF | API maturity for third-party integration |
-| Fidelity / Schwab / Vanguard Charitable | Traditional DAF | Scale and trust | No third-party app APIs; $50-ish grant minimums; not viable for micro-amounts |
+| **Our Change Foundation / Change** | The DAF behind RoundUp.org | Purpose-built for distributing to nonprofits of any size, already proven on this exact use case | Whether they take other platforms as partners, or are exclusive to RoundUp.org |
+| **[Goodstack](https://goodstack.io/)** (formerly Percent) | Donation API; vets causes and disburses | Names **round-ups in-app** as a supported donation type; owns vetting through disbursement | Fee schedule; agent-of-payee posture; whether they'll contract as our agent |
+| **[Every.org](https://docs.every.org/docs/intro)** | Free nonprofit/donation APIs; 501(c)(3) | Free APIs, 1M+ nonprofits searchable | Whether the API supports programmatic threshold/recurring donations, not just hosted links |
+| **[Daffy](https://www.daffy.org/)** | Modern DAF, low minimums | Built for small amounts; user-owned DAF makes the donor unambiguous | Third-party API availability is unconfirmed |
+| **[Endaoment](https://endaoment.org/)** | Onchain DAF, 501(c)(3) | Explicitly serves fintech platforms with white-label and custom integrations | Onchain settlement may not suit a consumer spare-change product |
 
-**Shortlist to actually contact: Goodstack, Every.org, Daffy.** Goodstack because round-ups
-are a named use case; Every.org because free and API-first; Daffy because user-owned DAFs
-sidestep both the money-transmission and donor-of-record problems at once.
+**Contact first: Our Change Foundation** (proven on this exact model), then Goodstack and
+Every.org.
 
-## How the round-up actually flows
+## How our round-up flows
 
-1. Plaid reads transactions → we compute spare change. **This is a number, not money.**
-2. The accrued figure crosses a threshold (say $5, or a monthly batch).
-3. We call the sponsor's API to create a donation for that amount.
-4. **The sponsor's processor charges the user's linked payment method**, user as payer of
-   record.
-5. The sponsor disburses to the cause and issues the receipt.
-
-At no point does a dollar sit in a Steward account. If a vendor cannot support step 4 in
-that shape, they are the wrong vendor.
+1. Plaid reads transactions → we compute spare change. **A number, not money.**
+2. Month closes. Total is compared against the minimum and the donor's cap.
+3. **One Stripe charge** to the donor's card on file.
+4. Funds settle to the sponsor per the agency agreement; sponsor disburses and receipts.
 
 ## Second-order issues
 
 - **Irrevocability.** DAF contributions are legally irrevocable. Current copy promises users
-  they can change their rate or opt out — true only while nothing is disbursed. That copy
-  must change the day it is.
-- **Tax receipts.** The sponsor issues them. We must never imply a deduction we don't
-  control.
-- **Are we still soliciting?** A sponsor moves most of the state charitable-solicitation
-  burden, but actively promoting giving may still count somewhere. One question for counsel.
-- **Fees on micro-amounts.** Percentage fees on $0.40 are brutal. Ask about minimums,
-  per-transaction fees, and whether batching monthly materially improves the economics.
-
----
+  they can change their rate or opt out — true only while nothing is disbursed. It must
+  change the day it isn't. Note RoundUp.org handles this by letting donors switch nonprofit
+  and pause future giving, never by refunding.
+- **Tax receipts** come from the sponsor. Never imply a deduction we don't control.
+- **PCI.** We store a card on file. Use Stripe's vault and tokenisation and stay out of
+  scope — never touch a PAN.
+- **Fee transparency.** RoundUp.org publishes theirs ($2, ~85% net). Given Steward's premise,
+  ours should be at least as legible.
 
 # Migration
 
@@ -168,12 +233,14 @@ that shape, they are the wrong vendor.
 
 - [ ] SnapTrade: commercial trading coverage by broker; fractional/notional support by
       broker; pricing; production approval requirements
-- [ ] Giving sponsors: payer-of-record flow, fee schedule, minimums, API maturity — contact
-      Goodstack, Every.org, Daffy
+- [ ] Giving sponsors: agency agreement, fee schedule, minimums, API maturity — contact
+      Our Change Foundation first, then Goodstack and Every.org
+- [ ] Elevate Opportunity: what a 501(c)(3) determination actually requires, and whether a
+      fiscal sponsor is the faster interim route
 - [ ] Counsel: does this structure clear both adviser status and money transmission
       (one hour, with `compliance/` and this document in hand)
 
-**Do not start Phase 2 until the payer-of-record answer is in writing.**
+**Do not start Phase 3 until the agent-of-payee answer is in writing.**
 
 ## Phase 1 — Teardown (safe to start now; identical under any funding model)
 
@@ -202,11 +269,14 @@ ledger, Plaid transaction sync, the statement.
 
 ## Phase 3 — Giving rail
 
-- [ ] Sponsor integration behind a `GivingSponsor` interface (so we can switch vendors)
-- [ ] Cause selection from the sponsor's catalogue
-- [ ] Threshold or monthly batch trigger
+- [ ] Sponsor integration behind a `GivingSponsor` interface (so Elevate can replace the
+      third party later without touching anything else)
+- [ ] Stripe card-on-file with tokenisation; never handle a PAN
+- [ ] Nonprofit selection from the sponsor's catalogue (one at a time)
+- [ ] Monthly close: total, apply minimum and cap, single charge
+- [ ] Failed-charge retry then pause
 - [ ] Donation history + receipts surfaced from the sponsor
-- [ ] Copy rewrite: irrevocability, who the donor is, where the receipt comes from
+- [ ] Copy rewrite: irrevocability, who the donor is, where the receipt comes from, the fee
 
 ## Phase 4 — Repositioning
 
@@ -221,7 +291,7 @@ ledger, Plaid transaction sync, the statement.
 | Risk | Severity | Mitigation |
 |---|---|---|
 | Fractional trading unsupported at most brokers | **High** — investing rail may not work | Phase 0 diligence. Fallback: whole-share investing on a monthly batch, or investing-rail-optional |
-| Sponsor requires platform-funded donations | **High** — reintroduces money transmission | Reject that model; shortlist has three candidates for this reason |
+| Agent-of-payee exemption doesn't hold in some states | **High** — would reintroduce money transmission | Counsel question in Phase 0; written agency agreement with the sponsor |
 | Users don't have brokerage accounts | Medium | Giving rail works standalone; investing becomes an upgrade |
 | Two vendor dependencies | Medium | Interface both behind our own abstractions from day one |
 | Brokerage connections break and need re-auth | Medium | Reconnection flow in Phase 2, not later |
