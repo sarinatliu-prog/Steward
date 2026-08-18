@@ -151,6 +151,11 @@ export function createUser({ email, passHash, salt }) {
     achRelationshipId: null,
     bankName: null,
     transfers: [],
+    // SnapTrade read-only brokerage connection. userSecret is a credential issued
+    // once by SnapTrade; in production it must be encrypted at rest.
+    snaptrade: null,      // { userId, userSecret, connectedAt } once registered
+    // Which ethical screens the user turned on, e.g. ["fossil_fuels","weapons"].
+    screens: [],
     // per-user portfolio state
     config: {
       framework: "Broad Ethical",

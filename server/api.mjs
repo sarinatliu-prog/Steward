@@ -22,6 +22,9 @@ import { FakeBroker, AlpacaBroker } from "./lib/broker.js";
 import { authFromEnv, makeRequester } from "./lib/alpaca-auth.js";
 import { randomPurchase } from "./lib/feed.js";
 import { mailerEnabled, siteUrl, sendMail, resetEmail, verifyEmail } from "./lib/mailer.js";
+import { snaptradeEnabled, registerUser as stRegister, connectionPortalUrl, allPositions } from "./lib/snaptrade.js";
+import { analyze } from "./lib/analyzer.js";
+import { screenCatalogue, isScreenKey } from "./lib/screens.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8787;
@@ -386,6 +389,11 @@ const server = createServer(async (req, res) => {
     return sendJson(res, 403, { error: "Cross-site request blocked." });
   }
 
+  // ---- the ethical screens catalogue (public reference data) ----
+  if (req.method === "GET" && path === "/api/screens") {
+    return sendJson(res, 200, { screens: screenCatalogue, snaptrade: snaptradeEnabled() });
+  }
+
   // ---- health ----
   if (req.method === "GET" && path === "/api/health") {
     return sendJson(res, 200, { ok: true, alpaca: ALPACA, errors: errorLog.length, ...db.stats() });
@@ -541,7 +549,8 @@ const server = createServer(async (req, res) => {
   // ===== everything below requires a session =====
   const authRoutes = ["/api/profile", "/api/portfolio", "/api/purchase", "/api/config",
                       "/api/plaid/link-token", "/api/plaid/exchange", "/api/plaid/sync", "/api/audit", "/api/verify/request",
-                      "/api/bank/accounts", "/api/bank/link", "/api/deposit", "/api/withdraw", "/api/transfers"];
+                      "/api/bank/accounts", "/api/bank/link", "/api/deposit", "/api/withdraw", "/api/transfers",
+                      "/api/screens/select", "/api/brokerage/connect", "/api/analysis"];
   if (authRoutes.includes(path)) {
     const user = currentUser(req);
     if (!user) return sendJson(res, 401, { error: "not signed in" });
@@ -555,6 +564,58 @@ const server = createServer(async (req, res) => {
       if (user.emailVerified) return sendJson(res, 200, { ok: true, alreadyVerified: true, emailed: false, devLink: null });
       const out = await issueVerification(user);
       return sendJson(res, 200, { ok: true, emailed: out.emailed, devLink: out.devLink });
+    }
+
+    // ---- save which ethical screens the user turned on ----
+    if (req.method === "POST" && path === "/api/screens/select") {
+      const body = await readBody(req);
+      const keys = Array.isArray(body?.screens) ? body.screens.filter(isScreenKey) : [];
+      user.screens = keys;
+      db.saveUser(user);
+      return sendJson(res, 200, { screens: user.screens });
+    }
+
+    // ---- start a read-only brokerage connection: returns SnapTrade portal URL ----
+    if (req.method === "POST" && path === "/api/brokerage/connect") {
+      if (!snaptradeEnabled()) return sendJson(res, 503, { error: "Brokerage connection isn't configured on this server." });
+      try {
+        // Register with SnapTrade once; reuse the stored credential after that.
+        if (!user.snaptrade) {
+          const reg = await stRegister(user.id);
+          user.snaptrade = { userId: reg.userId, userSecret: reg.userSecret, connectedAt: null };
+          db.saveUser(user);
+          db.audit(user, "snaptrade_registered");
+        }
+        const redirect = `${siteUrl()}/?connected=1`;
+        const url = await connectionPortalUrl(user.snaptrade.userId, user.snaptrade.userSecret, { redirect });
+        return sendJson(res, 200, { url });
+      } catch (e) {
+        captureError(e, "brokerage/connect");
+        return sendJson(res, 502, { error: "Couldn't start the brokerage connection. Try again." });
+      }
+    }
+
+    // ---- the analysis: holdings screened against the user's chosen flags ----
+    if (req.method === "GET" && path === "/api/analysis") {
+      if (!snaptradeEnabled()) return sendJson(res, 503, { error: "Brokerage connection isn't configured on this server." });
+      if (!user.snaptrade) return sendJson(res, 200, { connected: false });
+      try {
+        const { accounts, positions } = await allPositions(user.snaptrade.userId, user.snaptrade.userSecret);
+        if (accounts.length && !user.snaptrade.connectedAt) {
+          user.snaptrade.connectedAt = Date.now(); db.saveUser(user);
+          db.audit(user, "brokerage_connected", { accounts: accounts.length });
+        }
+        const analysis = analyze(positions, user.screens || []);
+        return sendJson(res, 200, {
+          connected: accounts.length > 0,
+          accounts: accounts.map((a) => ({ name: a.name, institution: a.institution })),
+          screens: user.screens || [],
+          ...analysis,
+        });
+      } catch (e) {
+        captureError(e, "analysis");
+        return sendJson(res, 502, { error: "Couldn't read your holdings. Try reconnecting." });
+      }
     }
 
     // ---- the user's own audit trail ----
