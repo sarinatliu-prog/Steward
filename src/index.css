@@ -1,13 +1,13 @@
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; padding: 0; }
 html, body { height: 100%; }
-body { background: #F3EEE2; }
+body { background: #081410; }
 
 /* Accessibility: a visible focus ring for keyboard users. !important so it beats the
    inline `outline:none` on inputs. Mouse clicks don't trigger :focus-visible, so it
    only shows during keyboard navigation. */
 :focus-visible {
-  outline: 2px solid #B48A4A !important;
+  outline: 2px solid #63D6A6 !important;
   outline-offset: 2px;
   border-radius: 4px;
 }
