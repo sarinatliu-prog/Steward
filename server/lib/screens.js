@@ -205,13 +205,18 @@ export const SCREENS = [
 // Fast lookup: TICKER -> [{ key, label, reason }] across every screen, so matching a
 // holding is O(1) per screen rather than scanning.
 const _index = new Map();
+const _names = new Map(); // ticker -> display name, parsed from the reason ("Name — …")
 for (const s of SCREENS) {
   for (const [ticker, reason] of Object.entries(s.tickers)) {
     const upper = ticker.toUpperCase();
     if (!_index.has(upper)) _index.set(upper, []);
     _index.get(upper).push({ key: s.key, label: s.label, reason });
+    if (!_names.has(upper)) _names.set(upper, reason.split(" — ")[0]);
   }
 }
+
+/** Human name for a ticker (from its screen reason), or the ticker itself. */
+export const companyName = (t) => _names.get(String(t || "").toUpperCase()) || t;
 
 export const SCREEN_KEYS = SCREENS.map((s) => s.key);
 export const isScreenKey = (k) => SCREEN_KEYS.includes(k);

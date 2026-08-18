@@ -100,17 +100,137 @@ function Splash() {
   );
 }
 
+// ── The live hero analyzer: type a ticker, see inside it, no login ───────────
+function HeroAnalyzer({ onStart }) {
+  const [q, setQ] = useState("VOO");
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const run = async (symbol) => {
+    const sym = (symbol ?? q).trim().toUpperCase();
+    if (!sym) return;
+    setBusy(true); setErr(""); setResult(null);
+    try { setResult(await api(`/api/lookup?symbol=${encodeURIComponent(sym)}`)); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+  // Auto-load VOO on mount so a visitor sees the surprise immediately.
+  useEffect(() => { run("VOO"); /* eslint-disable-next-line */ }, []);
+
+  const examples = ["VOO", "QQQ", "XOM", "AAPL"];
+  return (
+    <div style={{ maxWidth: 560, margin: "30px auto 0", textAlign: "left" }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()}
+          placeholder="Try a ticker — VOO, QQQ, XOM…" aria-label="Ticker symbol"
+          style={{ flex: 1, minWidth: 0, fontFamily: sans, fontSize: 15, color: D.ink, background: "rgba(255,255,255,0.08)",
+            border: `1px solid ${D.glassBorder}`, borderRadius: 12, padding: "14px 15px", outline: "none",
+            backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", textTransform: "uppercase" }} />
+        <button onClick={() => run()} disabled={busy} style={brassBtn(12, "14px 22px", 15)}>{busy ? "…" : "Check"}</button>
+      </div>
+      <div style={{ display: "flex", gap: 7, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={{ fontFamily: sans, fontSize: 12, color: D.faint }}>Try:</span>
+        {examples.map((x) => (
+          <button key={x} onClick={() => { setQ(x); run(x); }} style={{ background: "rgba(255,255,255,0.06)", border: `1px solid ${D.glassBorder}`, color: D.muted, borderRadius: 20, padding: "4px 11px", fontFamily: sans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{x}</button>
+        ))}
+      </div>
+
+      {err && <DarkErr>{err}</DarkErr>}
+      {result && <HeroResult result={result} onStart={onStart} />}
+    </div>
+  );
+}
+
+function HeroResult({ result, onStart }) {
+  const panel = glass({ marginTop: 14, padding: "18px 20px", background: "rgba(255,255,255,0.07)" });
+
+  if (result.type === "none") {
+    return (
+      <div style={panel}>
+        <div style={{ fontFamily: serif, fontSize: 19, color: "#F4FAF6" }}>
+          No flags for <b>{result.symbol}</b> among the names we track.
+        </div>
+        <p style={{ fontFamily: sans, fontSize: 13, color: D.muted, lineHeight: 1.55, margin: "8px 0 0" }}>
+          That doesn't mean it's audited clean — only that it isn't a company (or a fund we can see inside) on our lists. Connect your brokerage to check everything at once.
+        </p>
+        <HeroCTA onStart={onStart} />
+      </div>
+    );
+  }
+
+  if (result.type === "stock") {
+    return (
+      <div style={panel}>
+        <div style={{ fontFamily: serif, fontSize: 20, color: "#F4FAF6" }}>{result.symbol} · <span style={{ color: D.muted, fontFamily: sans, fontSize: 15 }}>{result.name}</span></div>
+        <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+          {result.flags.map((f) => (
+            <div key={f.key} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
+              <FlagChip>{f.label}</FlagChip>
+              <span style={{ fontFamily: sans, fontSize: 13, color: D.ink, lineHeight: 1.45 }}>{f.reason}</span>
+            </div>
+          ))}
+        </div>
+        <HeroCTA onStart={onStart} />
+      </div>
+    );
+  }
+
+  // fund — the money shot
+  const groups = groupByFlag(result.contains);
+  return (
+    <div style={panel}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ fontFamily: serif, fontSize: 20, color: "#F4FAF6" }}>{result.symbol} · <span style={{ color: D.muted, fontFamily: sans, fontSize: 15 }}>{result.name}</span></div>
+        <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, color: "#0A2A20", background: D.brassSoft, borderRadius: 20, padding: "3px 10px" }}>FUND</span>
+      </div>
+      <p style={{ fontFamily: sans, fontSize: 13.5, color: D.muted, margin: "6px 0 0", lineHeight: 1.5 }}>
+        Tracks {result.basis} — and holds <b style={{ color: "#F4FAF6" }}>{result.contains.length}</b> companies you may want to avoid:
+      </p>
+      <div style={{ marginTop: 12, display: "grid", gap: 9 }}>
+        {groups.map((g) => (
+          <div key={g.label} style={{ display: "flex", gap: 9, alignItems: "baseline", flexWrap: "wrap" }}>
+            <FlagChip>{g.label} · {g.names.length}</FlagChip>
+            <span style={{ fontFamily: sans, fontSize: 12.5, color: D.ink, lineHeight: 1.5 }}>
+              {g.names.slice(0, 4).join(", ")}{g.names.length > 4 ? `, +${g.names.length - 4} more` : ""}
+            </span>
+          </div>
+        ))}
+      </div>
+      <HeroCTA onStart={onStart} />
+    </div>
+  );
+}
+
+const groupByFlag = (contains) => {
+  const m = new Map();
+  for (const c of contains) for (const f of c.flags) {
+    if (!m.has(f.key)) m.set(f.key, { label: f.label, names: [] });
+    m.get(f.key).names.push(c.name);
+  }
+  return [...m.values()].sort((a, b) => b.names.length - a.names.length);
+};
+const FlagChip = ({ children }) => (
+  <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, color: "#F2A98F", background: "rgba(238,120,86,0.15)", border: "1px solid rgba(238,120,86,0.34)", borderRadius: 6, padding: "2px 8px", flexShrink: 0, whiteSpace: "nowrap" }}>{children}</span>
+);
+const HeroCTA = ({ onStart }) => (
+  <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${D.glassBorder}`, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+    <span style={{ fontFamily: sans, fontSize: 13, color: D.muted }}>That's one ticker. See your whole portfolio at once:</span>
+    <button onClick={onStart} style={{ ...mintBtn(), padding: "10px 18px", fontSize: 14, marginLeft: "auto" }}>Connect brokerage →</button>
+  </div>
+);
+
 // ── Landing ─────────────────────────────────────────────────────────────────
 function Landing({ onStart }) {
   const wrap = { maxWidth: 1000, margin: "0 auto", padding: "0 24px" };
   const steps = [
     { n: "01", t: "Pick what matters to you", b: "Fossil fuels, weapons, tobacco, gambling, surveillance, and more. Flip on the causes you care about — we only ever check for what you choose." },
     { n: "02", t: "Connect your brokerage", b: "One secure, read-only link through SnapTrade. Works with Robinhood, Schwab, Fidelity, E*TRADE, Webull, and others. We can see your holdings — never touch them." },
-    { n: "03", t: "See what clashes", b: "A plain list of the stocks you own that cross your lines, each with a one-sentence reason. No jargon, no score to argue with — just what's actually there." },
+    { n: "03", t: "See what clashes", b: "A plain list of what you own that crosses your lines — including the companies hiding inside your index funds, each with a one-sentence reason." },
   ];
   return (
     <div style={{ fontFamily: sans, background: L.bg }}>
-      {/* ── Dark hero ── */}
+      {/* ── Dark hero with the live analyzer ── */}
       <Canvas>
         <nav style={{ position: "sticky", top: 0, zIndex: 20, borderBottom: `1px solid ${D.glassBorder}`, background: "rgba(8,20,16,0.5)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}>
           <div style={{ ...wrap, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px" }}>
@@ -119,52 +239,19 @@ function Landing({ onStart }) {
           </div>
         </nav>
         <header>
-          <div style={{ ...wrap, textAlign: "center", padding: "clamp(64px,11vw,120px) 24px clamp(56px,9vw,96px)" }}>
+          <div style={{ ...wrap, textAlign: "center", padding: "clamp(56px,9vw,96px) 24px clamp(48px,7vw,80px)" }}>
             <p style={{ fontFamily: sans, fontSize: 13, letterSpacing: "0.18em", textTransform: "uppercase", color: D.brassSoft, marginBottom: 22 }}>The ethical portfolio analyzer</p>
-            <h1 style={{ fontFamily: serif, fontWeight: 800, fontSize: "clamp(40px,7.5vw,74px)", lineHeight: 1.02, margin: 0, letterSpacing: "-0.045em", color: "#F4FAF6" }}>
+            <h1 style={{ fontFamily: serif, fontWeight: 800, fontSize: "clamp(38px,7vw,68px)", lineHeight: 1.03, margin: 0, letterSpacing: "-0.045em", color: "#F4FAF6" }}>
               You don't know<br /><span style={{ color: D.mint }}>what you own.</span>
             </h1>
-            <p style={{ fontFamily: sans, fontSize: "clamp(16px,2vw,19px)", lineHeight: 1.6, color: D.muted, margin: "26px auto 0", maxWidth: 560 }}>
-              Your index funds and stocks may quietly hold oil companies, weapons makers, or tobacco giants. Steward reads your portfolio and flags what clashes with your values — free, read-only, in about two minutes.
+            <p style={{ fontFamily: sans, fontSize: "clamp(16px,2vw,19px)", lineHeight: 1.6, color: D.muted, margin: "24px auto 0", maxWidth: 560 }}>
+              Even a plain S&P 500 fund quietly holds oil majors, weapons makers, and tobacco giants. Type any ticker to see what's inside — free, no sign-up.
             </p>
-            <div style={{ marginTop: 38, display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-              <button onClick={onStart} style={brassBtn(14, "16px 32px", 16)}>Analyze my portfolio →</button>
-            </div>
-            <p style={{ fontFamily: sans, fontSize: 12.5, color: D.faint, marginTop: 20 }}>Read-only. We never trade, and never move your money.</p>
+            <HeroAnalyzer onStart={onStart} wrap={wrap} />
+            <p style={{ fontFamily: sans, fontSize: 12.5, color: D.faint, marginTop: 18 }}>Read-only. We never trade, and never move your money.</p>
           </div>
         </header>
       </Canvas>
-
-      {/* ── Light body: the sample result — the attractive hook ── */}
-      <section style={{ ...wrap, padding: "clamp(56px,9vw,96px) 24px 0" }}>
-        <div style={{ textAlign: "center", maxWidth: 560, margin: "0 auto" }}>
-          <p style={{ fontFamily: sans, fontSize: 12.5, letterSpacing: "0.14em", textTransform: "uppercase", color: L.brass, fontWeight: 700 }}>What you'll see</p>
-          <h2 style={{ fontFamily: serif, fontSize: "clamp(26px,4vw,38px)", color: L.pine, fontWeight: 700, margin: "10px 0 0", letterSpacing: "-0.02em" }}>Most portfolios have surprises.</h2>
-          <p style={{ fontFamily: sans, fontSize: 16, color: L.muted, lineHeight: 1.6, margin: "12px 0 0" }}>Here's the kind of thing Steward surfaces — a sample, so you know what to expect.</p>
-        </div>
-        <div style={{ ...card({ maxWidth: 560, margin: "28px auto 0", overflow: "hidden" }) }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: `1px solid ${L.lineSoft}`, background: L.pine }}>
-            <span style={{ fontFamily: sans, fontSize: 13, color: "#CFE6DC", fontWeight: 600 }}>Sample result</span>
-            <span style={{ fontFamily: sans, fontSize: 13, color: "#EAD9B4" }}>3 conflicts · $4,210</span>
-          </div>
-          {[
-            { s: "XOM", n: "Exxon Mobil", f: "Fossil fuels", r: "Integrated oil & gas major.", v: "$2,100" },
-            { s: "LMT", n: "Lockheed Martin", f: "Weapons", r: "Missiles and fighter aircraft.", v: "$1,340" },
-            { s: "MO", n: "Altria", f: "Tobacco", r: "Cigarettes and nicotine.", v: "$770" },
-          ].map((h, i) => (
-            <div key={h.s} style={{ padding: "14px 20px", borderTop: i ? `1px solid ${L.lineSoft}` : "none", borderLeft: `3px solid ${L.flag}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-              <div>
-                <div style={{ fontFamily: sans, fontSize: 14.5 }}><b style={{ color: L.ink }}>{h.s}</b> <span style={{ color: L.muted }}>· {h.n}</span></div>
-                <div style={{ fontFamily: sans, fontSize: 12.5, color: L.faint, marginTop: 2 }}>{h.r}</div>
-              </div>
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, color: L.flag, background: L.flagBg, border: `1px solid ${L.flagBorder}`, borderRadius: 6, padding: "3px 8px" }}>{h.f}</span>
-                <div style={{ fontFamily: sans, fontSize: 13, color: L.ink, fontWeight: 700, marginTop: 6 }}>{h.v}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
 
       {/* ── Light body: how it works ── */}
       <section style={{ ...wrap, padding: "clamp(56px,9vw,96px) 24px" }}>
@@ -361,61 +448,97 @@ function Dashboard({ user, onSignOut }) {
 }
 
 function Results({ analysis }) {
-  const { summary, conflicted, holdings } = analysis;
-  const clean = summary.conflictedCount === 0 && summary.analyzedCount > 0;
+  const { summary, conflictedStocks, conflictedFunds, holdings } = analysis;
+  const nothing = summary.directConflictCount === 0 && summary.fundConflictCount === 0
+    && (summary.analyzedStocks > 0 || summary.analyzedFunds > 0);
   return (
     <LSection n="3" title="What we found" sub={null}>
+      {/* headline */}
       <div style={{ ...card({ padding: "22px 24px", marginBottom: 16, background: L.pine, border: "none" }) }}>
-        {clean ? (
+        {nothing ? (
           <div style={{ fontFamily: serif, fontSize: 23, letterSpacing: "-0.01em", color: "#F4FAF6" }}>No conflicts among the names we track.</div>
         ) : (
           <>
-            <div style={{ fontFamily: sans, fontSize: 13, color: D.brassSoft, fontWeight: 600 }}>Conflicts found</div>
-            <div style={{ fontFamily: serif, fontSize: 38, fontWeight: 700, letterSpacing: "-0.03em", marginTop: 3, color: "#F4FAF6" }}>{money(summary.conflictedValueCents)}</div>
-            <div style={{ fontFamily: sans, fontSize: 13.5, color: "#B9CFC5", marginTop: 3 }}>
-              across {summary.conflictedCount} holding{summary.conflictedCount === 1 ? "" : "s"} · {summary.conflictedPct}% of your portfolio
+            <div style={{ fontFamily: sans, fontSize: 13, color: D.brassSoft, fontWeight: 600 }}>What clashes with your values</div>
+            <div style={{ fontFamily: serif, fontSize: 34, fontWeight: 700, letterSpacing: "-0.03em", marginTop: 4, color: "#F4FAF6", lineHeight: 1.15 }}>
+              {summary.directConflictValueCents > 0 && <>{money(summary.directConflictValueCents)} held directly</>}
+              {summary.directConflictValueCents > 0 && summary.fundConflictCount > 0 && <span style={{ color: "#8FB0A4" }}>, plus</span>}
+              {summary.fundConflictCount > 0 && <> {summary.fundConflictCount} fund{summary.fundConflictCount === 1 ? "" : "s"} holding flagged companies</>}
             </div>
           </>
         )}
       </div>
 
       {summary.byFlag.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
           {summary.byFlag.map((f) => (
             <span key={f.key} style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 600, color: L.flag, background: L.flagBg, border: `1px solid ${L.flagBorder}`, borderRadius: 20, padding: "6px 13px" }}>
-              {f.label}: {money(f.valueCents)}
+              {f.label}{f.valueCents > 0 ? `: ${money(f.valueCents)}` : ""}{f.fundCompanies > 0 ? ` · ${f.fundCompanies} in funds` : ""}
             </span>
           ))}
         </div>
       )}
 
-      {conflicted.map((h) => (
-        <div key={h.account + h.symbol} style={card({ padding: "15px 17px", marginBottom: 10, borderLeft: `3px solid ${L.flag}` })}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
-            <div>
-              <span style={{ fontFamily: sans, fontSize: 15, fontWeight: 700, color: L.ink }}>{h.symbol}</span>
-              <span style={{ fontFamily: sans, fontSize: 13, color: L.muted }}> · {h.description}</span>
-            </div>
-            <span style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, color: L.ink }}>{money(h.valueCents)}</span>
-          </div>
-          <div style={{ fontFamily: sans, fontSize: 11.5, color: L.faint, marginTop: 2 }}>{h.account} · {h.units} shares</div>
-          <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
-            {h.flags.map((f) => (
-              <div key={f.key} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, color: L.flag, background: L.flagBg, border: `1px solid ${L.flagBorder}`, borderRadius: 6, padding: "2px 7px", flexShrink: 0, whiteSpace: "nowrap" }}>{f.label}</span>
-                <span style={{ fontFamily: sans, fontSize: 12.5, color: L.ink, lineHeight: 1.45 }}>{f.reason}</span>
+      {/* direct stock holdings */}
+      {conflictedStocks.length > 0 && (
+        <>
+          <SubHead>Held directly</SubHead>
+          {conflictedStocks.map((h) => (
+            <div key={h.account + h.symbol} style={card({ padding: "15px 17px", marginBottom: 10, borderLeft: `3px solid ${L.flag}` })}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+                <div><span style={{ fontFamily: sans, fontSize: 15, fontWeight: 700, color: L.ink }}>{h.symbol}</span><span style={{ fontFamily: sans, fontSize: 13, color: L.muted }}> · {h.description}</span></div>
+                <span style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, color: L.ink }}>{money(h.valueCents)}</span>
               </div>
-            ))}
-          </div>
-        </div>
-      ))}
+              <div style={{ fontFamily: sans, fontSize: 11.5, color: L.faint, marginTop: 2 }}>{h.account} · {h.units} shares</div>
+              <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+                {h.flags.map((f) => (
+                  <div key={f.key} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                    <LFlagChip>{f.label}</LFlagChip>
+                    <span style={{ fontFamily: sans, fontSize: 12.5, color: L.ink, lineHeight: 1.45 }}>{f.reason}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
 
-      <div style={card({ padding: "14px 16px", marginTop: 14, background: L.lineSoft, boxShadow: "none" })}>
+      {/* fund look-through */}
+      {conflictedFunds.length > 0 && (
+        <>
+          <SubHead>Inside your funds</SubHead>
+          {conflictedFunds.map((h) => {
+            const groups = groupByFlag(h.contains);
+            return (
+              <div key={h.account + h.symbol} style={card({ padding: "15px 17px", marginBottom: 10, borderLeft: `3px solid ${L.brass}` })}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+                  <div><span style={{ fontFamily: sans, fontSize: 15, fontWeight: 700, color: L.ink }}>{h.symbol}</span><span style={{ fontFamily: sans, fontSize: 13, color: L.muted }}> · {h.description}</span></div>
+                  <span style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, color: L.ink }}>{money(h.valueCents)}</span>
+                </div>
+                <div style={{ fontFamily: sans, fontSize: 12, color: L.faint, marginTop: 2 }}>Tracks {h.fundBasis} — holds {h.contains.length} flagged companies</div>
+                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                  {groups.map((g) => (
+                    <div key={g.label} style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+                      <LFlagChip>{g.label} · {g.names.length}</LFlagChip>
+                      <span style={{ fontFamily: sans, fontSize: 12.5, color: L.ink, lineHeight: 1.5 }}>
+                        {g.names.slice(0, 5).join(", ")}{g.names.length > 5 ? `, +${g.names.length - 5} more` : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {/* honest method note */}
+      <div style={card({ padding: "14px 16px", marginTop: 16, background: L.lineSoft, boxShadow: "none" })}>
         <div style={{ fontFamily: sans, fontSize: 12.5, color: L.muted, lineHeight: 1.65 }}>
-          We screened <b style={{ color: L.ink }}>{summary.analyzedCount}</b> individual stock{summary.analyzedCount === 1 ? "" : "s"} against a
-          curated list of widely-held companies. We did <b>not</b> look inside your{" "}
-          <b style={{ color: L.ink }}>{summary.fundCount}</b> fund{summary.fundCount === 1 ? "" : "s"} — a broad index fund holds
-          hundreds of companies, and we don't claim to see inside one yet. A clean result means "none of the names we track," not "audited clean."
+          We checked <b style={{ color: L.ink }}>{summary.analyzedStocks}</b> direct holding{summary.analyzedStocks === 1 ? "" : "s"} and looked inside{" "}
+          <b style={{ color: L.ink }}>{summary.analyzedFunds}</b> fund{summary.analyzedFunds === 1 ? "" : "s"} using their published holdings.
+          {summary.opaqueFunds > 0 && <> {summary.opaqueFunds} other fund{summary.opaqueFunds === 1 ? " isn't" : "s aren't"} one we can see inside yet, so {summary.opaqueFunds === 1 ? "it's" : "they're"} marked "not analyzed" rather than clean.</>}
+          {" "}Index membership shifts over time, and a fund's dollar breakdown per company needs weights we don't show — we name the companies, not the cents.
         </div>
       </div>
 
@@ -438,6 +561,8 @@ function Results({ analysis }) {
     </LSection>
   );
 }
+const SubHead = ({ children }) => <div style={{ fontFamily: sans, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: L.brass, fontWeight: 700, margin: "6px 0 10px" }}>{children}</div>;
+const LFlagChip = ({ children }) => <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, color: L.flag, background: L.flagBg, border: `1px solid ${L.flagBorder}`, borderRadius: 6, padding: "2px 8px", flexShrink: 0, whiteSpace: "nowrap" }}>{children}</span>;
 
 // ── Shared ────────────────────────────────────────────────────────────────────
 function LSection({ n, title, sub, children }) {

@@ -13,7 +13,7 @@ import * as db from "./lib/db.js";
 import { hashPassword, verifyPassword, dummyVerify, newToken, sessionFromCookie, sessionCookie, validateCredentials } from "./lib/auth.js";
 import { mailerEnabled, siteUrl, sendMail, resetEmail, verifyEmail } from "./lib/mailer.js";
 import { snaptradeEnabled, registerUser as stRegister, connectionPortalUrl, allPositions } from "./lib/snaptrade.js";
-import { analyze } from "./lib/analyzer.js";
+import { analyze, lookupSymbol } from "./lib/analyzer.js";
 import { screenCatalogue, isScreenKey } from "./lib/screens.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -213,6 +213,15 @@ const server = createServer(async (req, res) => {
   // ---- the ethical screens catalogue (public reference data) ----
   if (req.method === "GET" && path === "/api/screens") {
     return sendJson(res, 200, { screens: screenCatalogue, snaptrade: snaptradeEnabled() });
+  }
+
+  // ---- public single-ticker lookup (the no-login hero widget) ----
+  if (req.method === "GET" && path === "/api/lookup") {
+    const rl = rateLimit("lookup", ip, 60, 60 * 60 * 1000);
+    if (rl.limited) return sendJson(res, 429, { error: "Too many lookups. Try again shortly." }, { "Retry-After": String(rl.retryAfter) });
+    const result = lookupSymbol(url.searchParams.get("symbol"));
+    if (!result) return sendJson(res, 400, { error: "Enter a ticker symbol." });
+    return sendJson(res, 200, result);
   }
 
   // ---- health ----

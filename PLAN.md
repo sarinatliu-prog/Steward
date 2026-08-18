@@ -38,7 +38,10 @@ The backend is done and tested end-to-end against SnapTrade's live sandbox:
   names — **not** a complete holdings database, and the UI says so.
 - `server/lib/analyzer.js` — pure function: (positions, active screens) → flagged holdings
   plus per-flag exposure totals. 14 unit tests.
-- Routes: `GET /api/screens` (public catalogue), `POST /api/screens/select`,
+- `server/lib/funds.js` — fund look-through: known index funds and their screened
+  constituents, so we can see inside VOO/SPY/VTI/QQQ and name what's there.
+- Routes: `GET /api/screens` (public catalogue), `GET /api/lookup?symbol=` (public
+  single-ticker check — powers the no-login hero widget), `POST /api/screens/select`,
   `POST /api/brokerage/connect` (returns portal URL), `GET /api/analysis`.
 
 Verified flow: signup → pick screens → connect the SnapTrade sandbox → analysis returns
