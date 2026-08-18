@@ -10,7 +10,9 @@
     "serve": "npm run build && npm start",
     "test": "node server/test/engine.test.mjs && node server/test/analyzer.test.mjs",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint:data": "node scripts/lint-data.mjs",
+    "enrich": "node scripts/enrich-edgar.mjs"
   },
   "engines": {
     "node": ">=22"

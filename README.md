@@ -47,7 +47,9 @@ npm install
 cp server/.env.example server/.env    # add your SnapTrade keys (see below)
 npm start                             # API server on :8787
 npm run dev                           # Vite dev server on :5173 (proxies /api → :8787)
-npm test                              # unit tests: round-up engine + analyzer
+npm test                              # unit tests (49): engine, analyzer, funds, SIC
+npm run lint                          # oxlint
+npm run lint:data                     # validate the ethical dataset
 npm run build                         # production build to dist/
 ```
 
@@ -69,10 +71,28 @@ holdings — no real brokerage needed.
 |---|---|
 | `server/lib/screens.js` | the ethical screens — companies by ticker, each with a reason |
 | `server/lib/funds.js` | fund look-through — known index funds and their constituents |
+| `server/lib/sic.js` | SIC industry code → screens (the EDGAR enrichment mapping) |
+| `server/lib/enriched.js` | loads the generated EDGAR dataset; industry-classified flags |
 | `server/lib/analyzer.js` | matches holdings (and fund contents) against chosen screens |
 | `server/lib/snaptrade.js` | read-only brokerage connection (register, portal, positions) |
+| `server/generated/companies.json` | EDGAR-classified companies (built by the enrich script) |
 | `server/api.mjs` | the HTTP server: auth, screens, lookup, connect, analysis |
 | `src/Analyzer.jsx` | the entire frontend — landing, hero lookup, auth, dashboard |
+| `scripts/enrich-edgar.mjs` | pull SEC data → `companies.json` (`npm run enrich`) |
+| `scripts/lint-data.mjs` | validate the dataset (`npm run lint:data`) |
+
+## The data
+
+Two layers feed the analyzer:
+
+- **Curated** (`screens.js`) — well-known companies, each with a precise, reasoned flag.
+- **Enriched** (`companies.json`, built from free SEC EDGAR data by `npm run enrich`) —
+  industry-classified flags across the market, for the clear-cut industries. Fuzzy
+  categories (surveillance, gambling, private prisons) stay curated + AI-classified.
+
+`allFlagsFor()` unions the two, curated winning. The UI shows when the dataset was last
+updated. Run `npm run enrich` to (re)build it (~20 min for the full ~10.4k filers, no API
+key), and `npm run lint:data` to validate it.
 
 ## API (the routes that matter)
 

@@ -33,13 +33,21 @@ Backend, tested end-to-end against SnapTrade's live sandbox:
 - **`funds.js`** — fund look-through. Major index funds (VOO, SPY, IVV, VTI, ITOT, QQQ, and
   the common mutual-fund equivalents) mapped to the screened companies they hold, from
   published constituents. Unknown funds stay "not analyzed."
-- **`analyzer.js`** — pure function. Direct stocks get dollar attribution; funds get
-  company-level look-through (we name the companies inside, never fake per-name dollars).
-  Plus `lookupSymbol()` for the public one-ticker hero widget. 21 unit tests.
+- **`sic.js` + `enriched.js` + `scripts/enrich-edgar.mjs`** — the breadth layer. Free SEC
+  EDGAR data maps SIC industry codes to screens for the clear-cut industries (fossil,
+  tobacco, alcohol, weapons, firearms, factory farming, payday), scaling coverage toward the
+  whole market (~10,400 filers) without hand-curation. Fuzzy screens stay curated + AI later.
+  A `lastUpdated` stamp surfaces data freshness in the UI.
+- **`analyzer.js`** — pure function. `allFlagsFor()` unions curated (precise, reasoned) and
+  enriched (industry-classified) flags, curated winning. Direct stocks get dollar
+  attribution; funds get company-level look-through (we name the companies inside, never
+  fake per-name dollars). Plus `lookupSymbol()` for the public hero widget.
 - **`snaptrade.js`** — read-only connection: register a user, mint a read-only portal, read
   positions. Official SDK (HMAC signing is the classic time-sink; we don't hand-roll it).
-- **Routes:** public `GET /api/lookup` and `GET /api/screens`; session-gated
-  `POST /api/screens/select`, `POST /api/brokerage/connect`, `GET /api/analysis`.
+- **Routes:** public `GET /api/lookup` and `GET /api/screens` (with data freshness);
+  session-gated `POST /api/screens/select`, `POST /api/brokerage/connect`, `GET /api/analysis`.
+- **Tests:** 49 total (round-up engine 17, analyzer + screens + funds + SIC 32).
+  `npm run lint:data` validates the dataset itself.
 
 Frontend (`src/Analyzer.jsx`): a dark-green liquid-glass hero with a **live ticker
 analyzer** (auto-loads VOO so a visitor instantly sees the S&P 500 holds 42 flagged
@@ -58,28 +66,20 @@ companies), then a light "paper" theme for auth and the signed-in dashboard.
 
 ## Roadmap
 
-### Now — deepen the analyzer
-- [x] Screens, fund look-through, read-only SnapTrade, live hero widget — all shipped.
-- [ ] **Live holdings data.** The fund constituent lists are curated and can go stale.
-      Pull real holdings from a data provider so a fund's contents are never out of date.
-- [ ] **Wider coverage** — sector, ESG, international, and more mutual funds; more companies
-      per screen.
-- [ ] **Symbol normalization** — class shares differ by broker (`BRK.B` vs `BRK-B` vs
-      `BRKB`); normalize before matching so nothing slips through on real connections.
+The concrete status and task list lives in [`NEXT.md`](NEXT.md). The strategic direction:
 
-### Later — giving (the RoundUp.org model)
-When the analyzer has users, add giving as a **separate rail**: round-ups accrue as a
-number, one monthly card charge via Stripe, funds to a third-party 501(c)(3) DAF that
-receipts and disburses. **We never hold the money** — the agent-of-payee structure (a
-written agency agreement with the sponsor) keeps this out of money-transmission territory.
-Confirm with counsel before taking a dollar. First call: Change (getchange.io), the
-infrastructure behind RoundUp.org. The round-up engine (integer-cent, 17 tests) already
-exists for this. See [`compliance/REGULATORY.md`](compliance/REGULATORY.md).
-
-### Later — trading (optional, only if it earns it)
-SnapTrade can place orders "where enabled," but OAuth connections are read-only and
-fractional support varies by broker. Only with explicit per-trade user approval
-(discretionary authority is an adviser hallmark), and after verifying fractional coverage.
+- **Deepen the data** — full EDGAR run, live ETF holdings so fund look-through never goes
+  stale, AI classification for the fuzzy screens, faith screens (incl. Sharia financial
+  ratios), symbol normalization.
+- **Trading as a paid convenience** — SnapTrade can execute where the broker allows. It
+  stays *information only*: the user initiates every trade, we never say "sell this."
+  Discretionary authority is an adviser hallmark, so this needs counsel sign-off first.
+- **Giving, much later** — when the analyzer has users, add round-up giving as a separate
+  rail on the RoundUp.org model: round-ups accrue as a number, one monthly Stripe charge,
+  funds to a third-party 501(c)(3) DAF that receipts and disburses. **We never hold the
+  money** — an agent-of-payee agreement with the sponsor keeps it out of money-transmission
+  territory. First call: Change (getchange.io). The round-up engine already exists for this.
+  See [`compliance/REGULATORY.md`](compliance/REGULATORY.md).
 
 ---
 

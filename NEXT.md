@@ -25,7 +25,7 @@ The analyzer is live, tested end-to-end, and deployed-ready.
   constant-time login, email verification/reset.
 - **Design** — dark-green liquid-glass hero, light "paper" dashboard (two-tone so it
   doesn't blend).
-- **49 passing tests**, clean build and lint.
+- **49 passing tests**, clean build and lint; `npm run lint:data` validates the dataset.
 - **Docs** — README, PLAN, SECURITY, compliance/REGULATORY all current.
 - **Regulatorily clear** — no advice, no custody, no accounts: not an adviser,
   broker-dealer, or money transmitter.
