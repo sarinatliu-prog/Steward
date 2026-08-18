@@ -220,6 +220,9 @@ export const companyName = (t) => _names.get(String(t || "").toUpperCase()) || t
 
 export const SCREEN_KEYS = SCREENS.map((s) => s.key);
 export const isScreenKey = (k) => SCREEN_KEYS.includes(k);
+const _labels = new Map(SCREENS.map((s) => [s.key, s.label]));
+/** UI label for a screen key. */
+export const screenLabel = (k) => _labels.get(k) || k;
 
 /** All flags that apply to a ticker, filtered to the screens the user turned on. */
 export function flagsFor(ticker, activeKeys) {

@@ -13,7 +13,7 @@ import * as db from "./lib/db.js";
 import { hashPassword, verifyPassword, dummyVerify, newToken, sessionFromCookie, sessionCookie, validateCredentials } from "./lib/auth.js";
 import { mailerEnabled, siteUrl, sendMail, resetEmail, verifyEmail } from "./lib/mailer.js";
 import { snaptradeEnabled, registerUser as stRegister, connectionPortalUrl, allPositions } from "./lib/snaptrade.js";
-import { analyze, lookupSymbol } from "./lib/analyzer.js";
+import { analyze, lookupSymbol, dataMeta } from "./lib/analyzer.js";
 import { screenCatalogue, isScreenKey } from "./lib/screens.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -212,7 +212,7 @@ const server = createServer(async (req, res) => {
 
   // ---- the ethical screens catalogue (public reference data) ----
   if (req.method === "GET" && path === "/api/screens") {
-    return sendJson(res, 200, { screens: screenCatalogue, snaptrade: snaptradeEnabled() });
+    return sendJson(res, 200, { screens: screenCatalogue, snaptrade: snaptradeEnabled(), data: dataMeta() });
   }
 
   // ---- public single-ticker lookup (the no-login hero widget) ----

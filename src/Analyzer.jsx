@@ -100,12 +100,24 @@ function Splash() {
   );
 }
 
+// Human "x days ago" from an ISO date, for the data-freshness note.
+function agoLabel(iso) {
+  if (!iso) return null;
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days} days ago`;
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
+
 // ── The live hero analyzer: type a ticker, see inside it, no login ───────────
 function HeroAnalyzer({ onStart }) {
   const [q, setQ] = useState("VOO");
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [meta, setMeta] = useState(null);
+  useEffect(() => { api("/api/screens").then((d) => setMeta(d.data)).catch(() => {}); }, []);
 
   const run = async (symbol) => {
     const sym = (symbol ?? q).trim().toUpperCase();
@@ -134,6 +146,11 @@ function HeroAnalyzer({ onStart }) {
         {examples.map((x) => (
           <button key={x} onClick={() => { setQ(x); run(x); }} style={{ background: "rgba(255,255,255,0.06)", border: `1px solid ${D.glassBorder}`, color: D.muted, borderRadius: 20, padding: "4px 11px", fontFamily: sans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{x}</button>
         ))}
+        {meta?.count > 0 && (
+          <span style={{ fontFamily: sans, fontSize: 11.5, color: D.faint, marginLeft: "auto" }}>
+            {meta.count.toLocaleString()} companies · updated {agoLabel(meta.lastUpdated)}
+          </span>
+        )}
       </div>
 
       {err && <DarkErr>{err}</DarkErr>}

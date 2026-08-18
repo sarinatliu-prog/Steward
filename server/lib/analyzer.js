@@ -9,6 +9,21 @@
 
 import { flagsFor, companyName, SCREEN_KEYS } from "./screens.js";
 import { knownFund } from "./funds.js";
+import { enrichedFlagsFor, enrichedName, dataMeta } from "./enriched.js";
+
+export { dataMeta };
+
+// Flags for a ticker from BOTH layers: curated (precise, reasoned) takes precedence, and
+// EDGAR industry-classification fills in everything the curated list doesn't name. Deduped
+// by screen key, so a company on both lists isn't flagged twice for the same screen.
+function allFlagsFor(ticker, activeKeys) {
+  const out = [];
+  const seen = new Set();
+  for (const f of flagsFor(ticker, activeKeys)) { if (!seen.has(f.key)) { seen.add(f.key); out.push(f); } }
+  for (const f of enrichedFlagsFor(ticker, activeKeys)) { if (!seen.has(f.key)) { seen.add(f.key); out.push(f); } }
+  return out;
+}
+const nameFor = (ticker, fallback) => (companyName(ticker) !== ticker ? companyName(ticker) : (enrichedName(ticker) || fallback || ticker));
 
 /**
  * Analyze a single ticker against ALL screens — for the public, no-login hero widget.
@@ -22,13 +37,13 @@ export function lookupSymbol(symbol) {
   if (fund) {
     const contains = [];
     for (const t of fund.holds) {
-      const fl = flagsFor(t, SCREEN_KEYS);
-      if (fl.length) contains.push({ ticker: t, name: companyName(t), flags: fl });
+      const fl = allFlagsFor(t, SCREEN_KEYS);
+      if (fl.length) contains.push({ ticker: t, name: nameFor(t), flags: fl });
     }
     return { symbol: sym, type: "fund", name: fund.name, basis: fund.basis, contains };
   }
-  const flags = flagsFor(sym, SCREEN_KEYS);
-  if (flags.length) return { symbol: sym, type: "stock", name: companyName(sym), flags };
+  const flags = allFlagsFor(sym, SCREEN_KEYS);
+  if (flags.length) return { symbol: sym, type: "stock", name: nameFor(sym), flags };
   return { symbol: sym, type: "none" };
 }
 
@@ -42,7 +57,7 @@ export function analyze(positions, activeKeys) {
   const holdings = positions.map((p) => {
     // Direct stock holding.
     if (p.kind === "stock") {
-      const flags = flagsFor(p.symbol, activeKeys);
+      const flags = allFlagsFor(p.symbol, activeKeys);
       return { ...p, type: "stock", flags, analyzable: true, conflicted: flags.length > 0 };
     }
     // Fund: look inside if we know its constituents, otherwise leave it opaque.
@@ -51,8 +66,8 @@ export function analyze(positions, activeKeys) {
       if (fund) {
         const contains = [];
         for (const t of fund.holds) {
-          const fl = flagsFor(t, activeKeys);
-          if (fl.length) contains.push({ ticker: t, name: companyName(t), flags: fl });
+          const fl = allFlagsFor(t, activeKeys);
+          if (fl.length) contains.push({ ticker: t, name: nameFor(t), flags: fl });
         }
         return { ...p, type: "fund", fundBasis: fund.basis, contains,
           flags: distinctLabels(contains), analyzable: true, lookThrough: true, conflicted: contains.length > 0 };

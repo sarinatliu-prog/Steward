@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { analyze } from "../lib/analyzer.js";
 import { flagsFor, isScreenKey, screenCatalogue, companyName } from "../lib/screens.js";
 import { knownFund } from "../lib/funds.js";
+import { screensForSic } from "../lib/sic.js";
 
 let passed = 0;
 const test = (name, fn) => { fn(); console.log(`  ✓ ${name}`); passed++; };
@@ -91,5 +92,18 @@ test("no active screens -> nothing conflicted", () => {
   assert.equal(a.conflictedStocks.length, 0);
   assert.equal(a.conflictedFunds.length, 0);
 });
+
+console.log("SIC classification (EDGAR enrichment):");
+test("crude petroleum → fossil fuels", () => assert.deepEqual(screensForSic(1311), ["fossil_fuels"]));
+test("petroleum refining → fossil fuels", () => assert.deepEqual(screensForSic(2911), ["fossil_fuels"]));
+test("cigarettes → tobacco", () => assert.deepEqual(screensForSic(2111), ["tobacco"]));
+test("malt beverages → alcohol", () => assert.deepEqual(screensForSic(2082), ["alcohol"]));
+test("generic 'Beverages' (2080) does NOT flag alcohol — Coca-Cola false positive", () => assert.deepEqual(screensForSic(2080), []));
+test("guided missiles → weapons", () => assert.deepEqual(screensForSic(3760), ["weapons"]));
+test("small arms → weapons + firearms", () => assert.deepEqual(screensForSic(3484).sort(), ["firearms", "weapons"]));
+test("poultry processing → factory farming", () => assert.deepEqual(screensForSic(2015), ["factory_farming"]));
+test("personal credit → predatory lending", () => assert.deepEqual(screensForSic(6141), ["payday_lending"]));
+test("electronic computers (Apple) → nothing", () => assert.deepEqual(screensForSic(3571), []));
+test("empty/zero SIC → nothing", () => { assert.deepEqual(screensForSic(0), []); assert.deepEqual(screensForSic(null), []); });
 
 console.log(`\n${passed} analyzer tests passed ✓`);
