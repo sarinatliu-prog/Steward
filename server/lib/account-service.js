@@ -1,6 +1,10 @@
-// Creates a real Alpaca SANDBOX brokerage account from a user's profile, and
-// funds it (virtual ACH). Sandbox only — no real person, no real money — but it
-// exercises the exact Broker API calls a production onboarding would.
+// Creates a real Alpaca brokerage account from a user's profile.
+//
+// The account application is a CIP (Customer Identification Program) filing: the
+// identity, disclosures, and signed agreement we send are attested to be the user's
+// own. Nothing in accountPayload() may be invented or defaulted — validateProfile()
+// in lib/auth.js is what guarantees every field arrived from the person opening the
+// account. Which environment we point at does not change that obligation.
 
 import { authFromEnv, makeRequester } from "./alpaca-auth.js";
 
@@ -9,45 +13,67 @@ export function alpacaEnabled() {
   try { authFromEnv(); return true; } catch { return false; }
 }
 
+/** True when we are pointed at Alpaca's live hosts rather than sandbox. */
+export function alpacaIsLive() {
+  const base = process.env.ALPACA_BASE_URL || "";
+  const auth = process.env.ALPACA_AUTH_URL || "";
+  const looksLive = (u) => /alpaca\.markets/.test(u) && !/sandbox/.test(u);
+  return looksLive(base) || looksLive(auth);
+}
+
 function requester() {
   const { auth, baseUrl } = authFromEnv();
   return makeRequester(auth, baseUrl);
 }
 
-// Build the KYC/account payload from the user's onboarding profile. Sandbox
-// tolerates synthetic values; a unique email + tax id avoids collisions.
-function accountPayload(profile) {
-  const stamp = Date.now() + Math.floor(Math.random() * 1000);
-  const now = new Date().toISOString();
-  const ssn = profile.taxId || `${100 + (stamp % 800)}-${10 + (stamp % 80)}-${1000 + (stamp % 9000)}`;
+// Build the KYC/account payload from the user's onboarding profile.
+//
+// Every value here comes from the user. `validateProfile` has already rejected the
+// request if any of it is missing, so a missing field at this point is a programming
+// error and throws rather than silently substituting a placeholder.
+function accountPayload({ profile, email, taxId, ip }) {
+  const need = (v, what) => {
+    if (v === undefined || v === null || v === "") {
+      throw new Error(`cannot open a brokerage account without ${what}`);
+    }
+    return v;
+  };
+  const phone = String(need(profile.phone, "a phone number")).replace(/[^\d]/g, "");
   return {
     contact: {
-      email_address: `steward.user+${stamp}@example.com`, // synthetic to avoid sandbox dupes
-      phone_number: profile.phone || "5556667777",
-      street_address: [profile.address || "123 Steward Way"],
-      city: profile.city || "San Mateo",
-      state: profile.state || "CA",
-      postal_code: profile.postal || "94401",
+      email_address: need(email, "the user's email address"),
+      phone_number: phone,
+      street_address: [need(profile.address, "a street address")],
+      city: need(profile.city, "a city"),
+      state: need(profile.state, "a state"),
+      postal_code: need(profile.postal, "a postal code"),
       country: "USA",
     },
     identity: {
-      given_name: profile.firstName || "Steward",
-      family_name: profile.lastName || "User",
-      date_of_birth: profile.dob || "1990-01-01",
-      tax_id: ssn,
+      given_name: need(profile.firstName, "a first name"),
+      family_name: need(profile.lastName, "a last name"),
+      date_of_birth: need(profile.dob, "a date of birth"),
+      tax_id: need(taxId, "a tax id"),
       tax_id_type: "USA_SSN",
-      country_of_citizenship: "USA",
-      country_of_birth: "USA",
+      country_of_citizenship: profile.citizenship || "USA",
+      country_of_birth: profile.citizenship || "USA",
       country_of_tax_residence: "USA",
-      funding_source: ["employment_income"],
+      funding_source: [need(profile.fundingSource, "a funding source")],
     },
+    // The user's own answers, captured in onboarding. Never defaulted.
     disclosures: {
-      is_control_person: false,
-      is_affiliated_exchange_or_finra: false,
-      is_politically_exposed: false,
-      immediate_family_exposed: false,
+      is_control_person: !!profile.isControlPerson,
+      is_affiliated_exchange_or_finra: !!profile.isAffiliatedExchangeOrFinra,
+      is_politically_exposed: !!profile.isPoliticallyExposed,
+      immediate_family_exposed: !!profile.immediateFamilyExposed,
     },
-    agreements: [{ agreement: "customer_agreement", signed_at: now, ip_address: "127.0.0.1" }],
+    // Signed-agreement evidence. The IP is the user's real one, from the request that
+    // accepted the agreement — a hardcoded 127.0.0.1 is not evidence of anything.
+    agreements: [{
+      agreement: "customer_agreement",
+      signed_at: profile.agreementsAcceptedAt || new Date().toISOString(),
+      ip_address: need(ip, "the client IP that accepted the agreement"),
+    }],
   };
 }
 
@@ -71,9 +97,17 @@ export async function findExistingCharityAccount() {
 }
 
 // Create the account. Returns { id, accountNumber, status }.
-export async function createBrokerageAccount(profile) {
+/**
+ * Open a brokerage account for a real person.
+ * @param {object} args
+ * @param {object} args.profile - the validated, storable onboarding profile
+ * @param {string} args.email   - the user's own verified email (not a synthetic one)
+ * @param {string} args.taxId   - SSN, passed straight through and never persisted here
+ * @param {string} args.ip      - client IP that accepted the customer agreement
+ */
+export async function createBrokerageAccount({ profile, email, taxId, ip }) {
   const req = requester();
-  const account = await req("POST", "/v1/accounts", accountPayload(profile));
+  const account = await req("POST", "/v1/accounts", accountPayload({ profile, email, taxId, ip }));
   return { id: account.id, accountNumber: account.account_number, status: account.status };
 }
 
@@ -186,6 +220,17 @@ export async function fundAccount(accountId, amount = FUND_AMOUNT) {
 // firm↔customer, so the route is firm → charity (in sandbox the firm is the source
 // of all cash anyway — user credits came from the same firm account).
 export async function createCharityAccount() {
+  // This account is opened from placeholder identity data. That is acceptable against
+  // sandbox, where no CIP filing is real, and is a fabricated account application
+  // against the live API. On production the charitable destination must be a real
+  // entity account (or the DAF/payments rail that replaces this route entirely) and
+  // its id supplied explicitly via ALPACA_CHARITY_ACCOUNT_ID.
+  if (alpacaIsLive()) {
+    throw new Error(
+      "refusing to auto-create the charitable account against live Alpaca: set " +
+      "ALPACA_CHARITY_ACCOUNT_ID to a real charitable entity account id."
+    );
+  }
   const stamp = Date.now();
   const req = requester();
   const account = await req("POST", "/v1/accounts", {

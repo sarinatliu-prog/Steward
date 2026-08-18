@@ -13,8 +13,8 @@ import { join, normalize, extname, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import * as db from "./lib/db.js";
-import { hashPassword, verifyPassword, newToken, sessionFromCookie, sessionCookie, validateCredentials, validateProfile } from "./lib/auth.js";
-import { alpacaEnabled, createBrokerageAccount, fundIfActive, fundViaAch, createCharityAccount, journalFirmTo, findExistingCharityAccount, createAchRelationshipFromPlaid, listAchRelationships, createDeposit, createWithdrawal, listTransfers } from "./lib/account-service.js";
+import { hashPassword, verifyPassword, dummyVerify, newToken, sessionFromCookie, sessionCookie, validateCredentials, validateProfile, storableProfile } from "./lib/auth.js";
+import { alpacaEnabled, alpacaIsLive, createBrokerageAccount, fundIfActive, fundViaAch, createCharityAccount, journalFirmTo, findExistingCharityAccount, createAchRelationshipFromPlaid, listAchRelationships, createDeposit, createWithdrawal, listTransfers } from "./lib/account-service.js";
 import { plaidEnabled, createLinkToken, exchangePublicToken, fetchTransactions, listBankAccounts, createAlpacaProcessorToken } from "./lib/plaid.js";
 import { recordPurchase, retryPending, rebalance, summary } from "./lib/portfolio.js";
 import { fromCents } from "./lib/roundup.js";
@@ -49,7 +49,12 @@ const AUTO_FUND = process.env.AUTO_FUND_NEW_ACCOUNTS === "1";
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 function sendJson(res, code, body, extraHeaders = {}) {
-  res.writeHead(code, { "Content-Type": "application/json", ...extraHeaders });
+  res.writeHead(code, {
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store",
+    ...securityHeaders(),
+    ...extraHeaders,
+  });
   res.end(JSON.stringify(body));
 }
 async function readBody(req) {
@@ -68,6 +73,23 @@ function validAmountCents(raw) {
   if (cents <= 0 || cents > MAX_TRANSFER_CENTS) return null;
   return cents;
 }
+// The client's IP, for the signed-agreement record on the account application.
+// TRUST_PROXY must be set explicitly: blindly believing X-Forwarded-For lets any
+// caller forge the IP we attest to on a regulatory filing. On Render the platform
+// sets the header and terminates TLS, so it is trustworthy there and only there.
+const TRUST_PROXY = process.env.TRUST_PROXY === "1";
+function clientIp(req) {
+  if (TRUST_PROXY) {
+    const fwd = req.headers["x-forwarded-for"];
+    if (fwd) {
+      const first = String(fwd).split(",")[0].trim();
+      if (first) return first;
+    }
+  }
+  const addr = req.socket?.remoteAddress || "";
+  return addr.replace(/^::ffff:/, "") || "0.0.0.0";
+}
+
 function currentUser(req) {
   const token = sessionFromCookie(req.headers.cookie);
   const session = db.getSession(token);
@@ -110,6 +132,92 @@ function captureError(err, ctx) {
   console.error(`[error] ${ctx}: ${entry.message}`);
 }
 
+// ── Rate limiting ─────────────────────────────────────────────────────────────
+// A fixed-window counter keyed by IP + bucket. In-process, so it resets on restart
+// and doesn't coordinate across instances — enough to stop a single host hammering
+// signup, password-reset, or the verification mailer, which is what actually happens.
+// A multi-instance deployment should move this to Redis.
+const rateBuckets = new Map(); // `${bucket}:${key}` -> { n, first }
+function rateLimit(bucket, key, max, windowMs) {
+  const now = Date.now();
+  const id = `${bucket}:${key}`;
+  const rec = rateBuckets.get(id);
+  if (!rec || now - rec.first > windowMs) {
+    rateBuckets.set(id, { n: 1, first: now });
+    return { limited: false, retryAfter: 0 };
+  }
+  rec.n++;
+  if (rec.n > max) {
+    return { limited: true, retryAfter: Math.ceil((rec.first + windowMs - now) / 1000) };
+  }
+  return { limited: false, retryAfter: 0 };
+}
+// Keep the map from growing without bound on a long-lived process.
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, rec] of rateBuckets) if (now - rec.first > 60 * 60 * 1000) rateBuckets.delete(id);
+}, 10 * 60 * 1000).unref();
+
+// ── CSRF ──────────────────────────────────────────────────────────────────────
+// Session auth is a cookie, so any page on the internet can make the browser send it.
+// SameSite=Lax blocks the common cross-site POST, but it is one cookie attribute and
+// not every client honours it identically — so state-changing requests must also
+// prove they came from our own origin.
+//
+// Same-origin is asserted by headers the page cannot forge: Sec-Fetch-Site (sent by
+// every current browser) and Origin. A request with neither is not a browser form
+// post, so it is allowed through for curl/health checks; a request with either must match.
+function allowedOrigins() {
+  const list = [];
+  if (process.env.APP_URL) list.push(process.env.APP_URL.replace(/\/$/, ""));
+  if (process.env.RENDER_EXTERNAL_URL) list.push(process.env.RENDER_EXTERNAL_URL.replace(/\/$/, ""));
+  if (!process.env.DATABASE_URL) {
+    // Local dev: the Vite dev server and the API run on different ports.
+    list.push(`http://localhost:${PORT}`, "http://localhost:5173", "http://127.0.0.1:5173");
+  }
+  return list;
+}
+function csrfRejected(req) {
+  const site = req.headers["sec-fetch-site"];
+  if (site) return !(site === "same-origin" || site === "same-site" || site === "none");
+  const origin = req.headers.origin;
+  if (!origin) return false; // not a browser-initiated form post
+  return !allowedOrigins().includes(origin.replace(/\/$/, ""));
+}
+
+// ── Security headers ──────────────────────────────────────────────────────────
+// The app ships no inline <script>, but it does use inline style attributes
+// throughout, so style-src needs 'unsafe-inline' while script-src does not.
+// connect-src stays 'self' plus Plaid, which the Link SDK talks to directly.
+const IS_PROD = !!process.env.DATABASE_URL;
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' https://cdn.plaid.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com data:",
+  "img-src 'self' data:",
+  "connect-src 'self' https://*.plaid.com",
+  "frame-src https://cdn.plaid.com",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'none'",
+  "object-src 'none'",
+].join("; ");
+function securityHeaders() {
+  const h = {
+    "Content-Security-Policy": CSP,
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+  };
+  // Only meaningful over HTTPS, and actively harmful to set on a localhost http dev
+  // server (the browser would then refuse plain http on localhost for two years).
+  if (IS_PROD) h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+  return h;
+}
+
 // Basic login throttle: slow down credential-stuffing without a full auth service.
 const loginAttempts = new Map(); // key -> { n, first }
 function loginBlocked(key) {
@@ -124,6 +232,30 @@ function loginFailed(key) {
   else rec.n++;
 }
 const loginOk = (key) => loginAttempts.delete(key);
+
+// ── Email verification ───────────────────────────────────────────────────────
+// One place that mints the token and sends the mail, so signup and the manual
+// "resend" button can't drift apart.
+//
+// Issuing a new link invalidates any earlier one: a verification link that stays live
+// for 24 hours after the user asked for a fresh one is an unnecessary window, and it
+// means a link leaked from an old inbox can still be redeemed.
+async function issueVerification(user) {
+  db.revokeTokens("verify", user.id);
+  const token = db.createToken("verify", user.id, 24 * 60 * 60 * 1000); // 24 h
+  const link = `${siteUrl()}/api/verify?token=${token}`;
+  let emailed = false;
+  if (mailerEnabled()) {
+    const out = await sendMail({ to: user.email, ...verifyEmail(link) });
+    emailed = !!out.sent;
+    if (!out.sent) captureError(new Error(`verification email not sent: ${out.reason}`), "issueVerification");
+  }
+  // Only ever surface the raw link when there is no mail provider AND we are not
+  // running against a real database (i.e. local dev), or when explicitly switched on.
+  const devOk = !mailerEnabled() && (process.env.ALLOW_DEV_MAIL_LINKS === "1" || !process.env.DATABASE_URL);
+  if (!emailed) console.log(`[mail:dev] verification for ${user.email}: ${link}`);
+  return { emailed, devLink: devOk ? link : null };
+}
 
 // ── The charitable account: "redirect the residue", for real ─────────────────
 // One designated sandbox account that tithes are journaled into. Resolved from env,
@@ -247,6 +379,12 @@ const server = createServer(async (req, res) => {
  try {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const path = url.pathname;
+  const ip = clientIp(req);
+
+  // Reject cross-site state changes before any handler runs (see csrfRejected).
+  if (req.method !== "GET" && req.method !== "HEAD" && csrfRejected(req)) {
+    return sendJson(res, 403, { error: "Cross-site request blocked." });
+  }
 
   // ---- health ----
   if (req.method === "GET" && path === "/api/health") {
@@ -255,6 +393,8 @@ const server = createServer(async (req, res) => {
 
   // ---- waitlist: capture demand while real money is gated behind compliance ----
   if (req.method === "POST" && path === "/api/waitlist") {
+    const rl = rateLimit("waitlist", ip, 5, 60 * 60 * 1000);
+    if (rl.limited) return sendJson(res, 429, { error: "Too many requests. Try again later." }, { "Retry-After": String(rl.retryAfter) });
     const body = await readBody(req);
     if (!body?.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) {
       return sendJson(res, 400, { error: "Enter a valid email address." });
@@ -278,14 +418,16 @@ const server = createServer(async (req, res) => {
 
   // ---- email verification: confirm link ----
   if (req.method === "GET" && path === "/api/verify") {
+    const rl = rateLimit("verify-confirm", ip, 30, 60 * 60 * 1000);
+    if (rl.limited) return sendJson(res, 429, { error: "Too many attempts. Try again later." });
     const t = db.useToken(url.searchParams.get("token"), "verify");
     if (t) {
       const u = db.getUser(t.userId);
       if (u) { u.emailVerified = true; db.saveUser(u); db.audit(u, "email_verified"); }
-      res.writeHead(302, { Location: "/?verified=1" });
+      res.writeHead(302, { Location: "/?verified=1", ...securityHeaders() });
       return res.end();
     }
-    res.writeHead(302, { Location: "/?verified=0" });
+    res.writeHead(302, { Location: "/?verified=0", ...securityHeaders() });
     return res.end();
   }
 
@@ -295,11 +437,15 @@ const server = createServer(async (req, res) => {
   // ALLOW_DEV_MAIL_LINKS=1 — an explicit, documented demo switch — and always logged
   // server-side. Wiring Postmark/SES later replaces the dev link with a real send.
   if (req.method === "POST" && path === "/api/reset/request") {
+    const rl = rateLimit("reset", ip, 5, 60 * 60 * 1000);
+    if (rl.limited) return sendJson(res, 429, { error: "Too many requests. Try again later." }, { "Retry-After": String(rl.retryAfter) });
     const body = await readBody(req);
     const email = String(body?.email || "").toLowerCase();
     let devLink = null;
     const u = db.getUserByEmail(email);
     if (u) {
+      // Only the newest reset link stays redeemable — see issueVerification.
+      db.revokeTokens("reset", u.id);
       const token = db.createToken("reset", u.id, 30 * 60 * 1000); // 30 min
       const link = `${siteUrl()}/?reset=${token}`;
       console.log(`[mail:dev] password reset for ${email}: ${link}`);
@@ -333,6 +479,8 @@ const server = createServer(async (req, res) => {
 
   // ---- signup ----
   if (req.method === "POST" && path === "/api/signup") {
+    const rl = rateLimit("signup", ip, 5, 60 * 60 * 1000);
+    if (rl.limited) return sendJson(res, 429, { error: "Too many sign-ups from this network. Try again later." }, { "Retry-After": String(rl.retryAfter) });
     const body = await readBody(req);
     if (!body) return sendJson(res, 400, { error: "invalid JSON" });
     const err = validateCredentials(body.email, body.password);
@@ -341,6 +489,11 @@ const server = createServer(async (req, res) => {
     const { salt, passHash } = hashPassword(body.password);
     const user = db.createUser({ email: body.email, salt, passHash });
     db.audit(user, "account_signup");
+    // Send the verification email straight away. Previously this only happened if the
+    // user noticed the banner and clicked it, so most accounts were never verified.
+    // Never block signup on the mail provider — a slow or down Resend must not fail
+    // account creation.
+    issueVerification(user).catch((e) => captureError(e, "signup/verify-email"));
     const token = newToken();
     db.createSession(user.id, token);
     return sendJson(res, 200, { user: publicUser(user) }, { "Set-Cookie": sessionCookie(token) });
@@ -351,9 +504,17 @@ const server = createServer(async (req, res) => {
     const body = await readBody(req);
     if (!body) return sendJson(res, 400, { error: "invalid JSON" });
     const key = String(body.email || "").toLowerCase();
+    // Per-email throttling alone doesn't stop password spraying: one attacker trying
+    // one common password against a thousand accounts never trips it. Limit the IP too.
+    const rl = rateLimit("login", ip, 30, 10 * 60 * 1000);
+    if (rl.limited) return sendJson(res, 429, { error: "Too many attempts. Try again in a few minutes." }, { "Retry-After": String(rl.retryAfter) });
     if (loginBlocked(key)) return sendJson(res, 429, { error: "Too many attempts. Try again in a few minutes." });
     const user = db.getUserByEmail(body.email);
-    if (!user || !verifyPassword(body.password || "", user.salt, user.passHash)) {
+    // Always spend the same work whether or not the account exists (see dummyVerify).
+    const ok = user
+      ? verifyPassword(body.password || "", user.salt, user.passHash)
+      : dummyVerify(body.password);
+    if (!ok) {
       loginFailed(key);
       return sendJson(res, 401, { error: "Wrong email or password." });
     }
@@ -387,12 +548,13 @@ const server = createServer(async (req, res) => {
 
     // ---- email verification: request a link ----
     if (req.method === "POST" && path === "/api/verify/request") {
-      const token = db.createToken("verify", user.id, 24 * 60 * 60 * 1000); // 24 h
-      const link = `${siteUrl()}/api/verify?token=${token}`;
-      console.log(`[mail:dev] verification for ${user.email}: ${link}`);
-      if (mailerEnabled()) await sendMail({ to: user.email, ...verifyEmail(link) });
-      const devLink = (!mailerEnabled() && (process.env.ALLOW_DEV_MAIL_LINKS === "1" || !process.env.DATABASE_URL)) ? link : null;
-      return sendJson(res, 200, { ok: true, emailed: mailerEnabled(), devLink });
+      // Unthrottled, this endpoint is a free email cannon pointed at any address an
+      // attacker can sign up with, and a fast way to burn the sending reputation.
+      const rl = rateLimit("verify", user.id, 5, 60 * 60 * 1000);
+      if (rl.limited) return sendJson(res, 429, { error: "Too many verification emails. Try again later." }, { "Retry-After": String(rl.retryAfter) });
+      if (user.emailVerified) return sendJson(res, 200, { ok: true, alreadyVerified: true, emailed: false, devLink: null });
+      const out = await issueVerification(user);
+      return sendJson(res, 200, { ok: true, emailed: out.emailed, devLink: out.devLink });
     }
 
     // ---- the user's own audit trail ----
@@ -406,9 +568,14 @@ const server = createServer(async (req, res) => {
       if (!body) return sendJson(res, 400, { error: "invalid JSON" });
       // Validate BEFORE opening an Alpaca account so bad input never 422s in front
       // of the user (Alpaca rejects e.g. names under 2 chars).
-      const invalid = validateProfile(body.profile || {});
+      const submitted = body.profile || {};
+      const invalid = validateProfile(submitted);
       if (invalid) return sendJson(res, 400, { error: invalid });
-      user.profile = { ...(user.profile || {}), ...(body.profile || {}) };
+
+      // The SSN is used once, for the account application, and is never written to
+      // our database — storableProfile() drops it and keeps only the last four.
+      const taxId = String(submitted.taxId || "").trim();
+      user.profile = { ...(user.profile || {}), ...storableProfile(submitted) };
       if (body.config) {
         user.config = { ...user.config, ...body.config };
         if (Array.isArray(body.config.holdings) && body.config.holdings.length) rebalance(user);
@@ -416,7 +583,12 @@ const server = createServer(async (req, res) => {
       let accountStatus = null, accountError = null, funding = null;
       if (ALPACA && !user.alpacaAccountId) {
         try {
-          const acct = await createBrokerageAccount(user.profile);
+          const acct = await createBrokerageAccount({
+            profile: user.profile,
+            email: user.email,
+            taxId,
+            ip: clientIp(req),
+          });
           user.alpacaAccountId = acct.id;
           accountStatus = acct.status;
           db.audit(user, "brokerage_account_created", { account: acct.id, status: acct.status });
@@ -662,12 +834,15 @@ async function serveStatic(res, pathname) {
   if (!filePath.startsWith(DIST_DIR)) filePath = join(DIST_DIR, "index.html");
   try {
     const body = await readFile(filePath);
-    res.writeHead(200, { "Content-Type": MIME[extname(filePath)] || "application/octet-stream" });
+    res.writeHead(200, {
+      "Content-Type": MIME[extname(filePath)] || "application/octet-stream",
+      ...securityHeaders(),
+    });
     return res.end(body);
   } catch {
     try {
       const html = await readFile(join(DIST_DIR, "index.html"));
-      res.writeHead(200, { "Content-Type": MIME[".html"] });
+      res.writeHead(200, { "Content-Type": MIME[".html"], "Cache-Control": "no-store", ...securityHeaders() });
       return res.end(html);
     } catch {
       res.writeHead(404, { "Content-Type": "text/plain" });
@@ -703,7 +878,21 @@ server.listen(PORT, () => {
   console.log(`Good Steward on http://localhost:${PORT}`);
   console.log(`  alpaca: ${ALPACA ? "on (sandbox)" : "off (simulated)"}`);
   console.log(`  db:     ${dbInfo.backend} · ${dbInfo.users} users`);
+  console.log(`  mail:   ${mailerEnabled() ? "resend" : "OFF — verification/reset links are logged, not emailed"}`);
   if (!process.env.DATABASE_URL) {
     console.log("  ⚠ no DATABASE_URL — state is a local file and will NOT survive a redeploy.");
+  }
+  if (process.env.DATABASE_URL && !mailerEnabled()) {
+    console.warn("  ⚠ RESEND_API_KEY is unset in a production deployment — nobody can verify their email or reset a password.");
+  }
+  if (process.env.DATABASE_URL && !process.env.APP_URL && !process.env.RENDER_EXTERNAL_URL) {
+    console.warn(`  ⚠ neither APP_URL nor RENDER_EXTERNAL_URL is set — email links will point at localhost:${PORT} and will not work.`);
+  }
+  if (process.env.DATABASE_URL && !TRUST_PROXY) {
+    console.warn("  ⚠ TRUST_PROXY is unset behind a proxy — the IP recorded on account agreements will be the proxy's, not the user's.");
+  }
+  if (AUTO_FUND && alpacaIsLive()) {
+    console.error("  ✖ AUTO_FUND_NEW_ACCOUNTS=1 with LIVE Alpaca credentials — this gifts real company money to every signup. Refusing to start.");
+    process.exit(1);
   }
 });

@@ -68,7 +68,7 @@ function layout({ heading, lead, buttonLabel, url, footer }) {
         <p style="font-size:11.5px;line-height:1.5;color:${MUTED};margin:14px 0 0;word-break:break-all">Or paste this link into your browser:<br><a href="${url}" style="color:${BRASS}">${url}</a></p>
       </td></tr>
       <tr><td style="padding:22px 34px 30px">
-        <div style="border-top:1px solid #E4DDCB;padding-top:16px;font-size:11px;color:${MUTED}">Good Steward — a stewardship layer for your money. Sandbox demo; no real funds move.</div>
+        <div style="border-top:1px solid #E4DDCB;padding-top:16px;font-size:11px;color:${MUTED}">Good Steward — a stewardship layer for your money.</div>
       </td></tr>
     </table>
   </td></tr></table>

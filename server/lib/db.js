@@ -220,6 +220,15 @@ export function createToken(type, userId, ttlMs) {
   save();
   return token;
 }
+/** Drop every outstanding token of a type for a user (called before issuing a new
+ *  one, so only the newest link is ever redeemable). */
+export function revokeTokens(type, userId) {
+  if (!db.tokens) return;
+  for (const [tok, t] of Object.entries(db.tokens)) {
+    if (t.type === type && t.userId === userId) delete db.tokens[tok];
+  }
+  save();
+}
 export function useToken(token, type) {
   const t = (db.tokens || {})[token];
   if (!t || t.type !== type) return null;

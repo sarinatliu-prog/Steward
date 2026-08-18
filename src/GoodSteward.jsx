@@ -191,7 +191,16 @@ export default function GoodSteward() {
   const [roundups, setRoundups]         = useState(true);
   const [showRoundupsInfo, setShowRoundupsInfo] = useState(false);
   const [showResidueInfo, setShowResidueInfo] = useState(false);
-  const [profile, setProfile]           = useState({ firstName:"", lastName:"", dob:"", address:"", city:"", state:"", postal:"" });
+  // Every field Alpaca's CIP requires. The disclosures start as null, not false, so
+  // "not answered yet" is distinguishable from "answered no" — the server rejects the
+  // application unless all four were actually answered.
+  const [profile, setProfile]           = useState({
+    firstName:"", lastName:"", dob:"", address:"", city:"", state:"", postal:"",
+    phone:"", taxId:"", citizenship:"USA", fundingSource:"",
+    isControlPerson:null, isAffiliatedExchangeOrFinra:null,
+    isPoliticallyExposed:null, immediateFamilyExposed:null,
+    agreementsAccepted:false,
+  });
   const [creating, setCreating]         = useState(false);
   const [profileError, setProfileError] = useState("");
   const { user, setUser, signup, login, logout } = useAuth();
@@ -282,7 +291,7 @@ export default function GoodSteward() {
     else setStage("app");
   }, [user]);
 
-  // Finish onboarding: send profile + chosen framework, create the sandbox account.
+  // Finish onboarding: send profile + chosen framework, open the brokerage account.
   const openAccount = async () => {
     setProfileError("");
     setCreating(true);
@@ -290,7 +299,9 @@ export default function GoodSteward() {
       const res = await fetch("/api/profile", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          profile,
+          // Stamp when the agreement was accepted; the server pairs it with the
+          // request's IP as the signed-agreement record on the application.
+          profile: { ...profile, agreementsAcceptedAt: new Date().toISOString() },
           config: { framework: fw.name, holdings: fw.holdings.map(h => ({ symbol: h.t, a: h.a })), tithePct: pct, contribution, screen },
         }),
       });
@@ -446,7 +457,12 @@ export default function GoodSteward() {
   if (stage === "onboard") {
     const steps = [renderRisk, renderFramework, renderScreen, renderTithe, renderProfile];
     const last = steps.length - 1;
-    const profileOk = profile.firstName && profile.lastName && profile.dob;
+    const disclosuresAnswered = ["isControlPerson", "isAffiliatedExchangeOrFinra",
+      "isPoliticallyExposed", "immediateFamilyExposed"].every((k) => typeof profile[k] === "boolean");
+    const profileOk = profile.firstName && profile.lastName && profile.dob &&
+      profile.address && profile.city && profile.state && profile.postal &&
+      profile.phone && profile.taxId && profile.fundingSource &&
+      disclosuresAnswered && profile.agreementsAccepted;
     return (
       <Frame>
         <FontInjector />
@@ -505,7 +521,7 @@ export default function GoodSteward() {
           )}
           {verifyLink && verifyLink !== "sent" && verifyLink !== "emailed" && (
             <a href={verifyLink} style={{ fontFamily:sans, fontSize:12.5, color:C.brass, textDecoration:"underline" }}>
-              Open verification link (shown here; the demo has no email provider)
+              Open verification link (email isn't configured on this server)
             </a>
           )}
           {verifyLink === "emailed" && <span style={{ color:C.pine }}>✓ Verification link sent. Check your inbox.</span>}
@@ -715,32 +731,114 @@ export default function GoodSteward() {
 
   function renderProfile() {
     const set = (k) => (e) => setProfile(p => ({ ...p, [k]: e.target.value }));
+    // Format the SSN as it's typed so the server's 123-45-6789 check isn't a
+    // guessing game for the user.
+    const setSsn = (e) => {
+      const d = e.target.value.replace(/[^\d]/g, "").slice(0, 9);
+      const out = d.length > 5 ? `${d.slice(0,3)}-${d.slice(3,5)}-${d.slice(5)}`
+                : d.length > 3 ? `${d.slice(0,3)}-${d.slice(3)}`
+                : d;
+      setProfile(p => ({ ...p, taxId: out }));
+    };
+    const setPhone = (e) => {
+      const d = e.target.value.replace(/[^\d]/g, "").slice(0, 10);
+      const out = d.length > 6 ? `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`
+                : d.length > 3 ? `(${d.slice(0,3)}) ${d.slice(3)}`
+                : d;
+      setProfile(p => ({ ...p, phone: out }));
+    };
+    const setBool = (k, v) => () => setProfile(p => ({ ...p, [k]: v }));
+
+    // The four questions every US brokerage must ask. They have to be answered by
+    // the person opening the account — answering them on their behalf would be a
+    // false attestation, so there is deliberately no default selection.
+    const DISCLOSURES = [
+      { k: "isControlPerson", q: "Are you a director, officer, or 10%+ shareholder of a publicly traded company?" },
+      { k: "isAffiliatedExchangeOrFinra", q: "Are you employed by or affiliated with a broker-dealer, exchange, or FINRA?" },
+      { k: "isPoliticallyExposed", q: "Are you, or have you been, a senior political figure?" },
+      { k: "immediateFamilyExposed", q: "Is an immediate family member any of the above?" },
+    ];
+
+    const YesNo = ({ k }) => (
+      <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+        {[["No", false], ["Yes", true]].map(([label, val]) => {
+          const on = profile[k] === val;
+          return (
+            <button key={label} type="button" onClick={setBool(k, val)}
+              style={{ fontFamily:sans, fontSize:12.5, fontWeight:600, padding:"6px 14px", borderRadius:9, cursor:"pointer",
+                       border:`1px solid ${on ? C.pine : C.line}`, background:on ? C.pine : C.card, color:on ? "#F3EEE2" : C.muted }}>
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    );
+
     return (
       <div>
         <Kicker>Step 5 · Your profile</Kicker>
         <H2>Open your brokerage account</H2>
-        <P>We use this to open your brokerage account with our partner, Alpaca.</P>
+        <P>Federal law requires us to identify everyone who opens a brokerage account. Your details go to our partner Alpaca, who holds the account.</P>
         <div style={{ marginTop:18, display:"grid", gap:10 }}>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
             <ProfileInput label="First name" value={profile.firstName} onChange={set("firstName")} />
             <ProfileInput label="Last name" value={profile.lastName} onChange={set("lastName")} />
           </div>
-          <ProfileInput label="Date of birth" type="date" value={profile.dob} onChange={set("dob")} />
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+            <ProfileInput label="Date of birth" type="date" value={profile.dob} onChange={set("dob")} />
+            <ProfileInput label="Phone" type="tel" value={profile.phone} onChange={setPhone} placeholder="(555) 123-4567" />
+          </div>
           <ProfileInput label="Street address" value={profile.address} onChange={set("address")} placeholder="123 Main St" />
           <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr", gap:10 }}>
             <ProfileInput label="City" value={profile.city} onChange={set("city")} />
             <ProfileInput label="State" value={profile.state} onChange={set("state")} placeholder="CA" />
             <ProfileInput label="ZIP" value={profile.postal} onChange={set("postal")} placeholder="94105" />
           </div>
+          <ProfileInput label="Social Security number" value={profile.taxId} onChange={setSsn} placeholder="123-45-6789" inputMode="numeric" />
+          <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, margin:"-4px 0 4px" }}>
+            Sent directly to Alpaca to verify your identity. We never store it.
+          </p>
+          <label style={{ display:"block" }}>
+            <div style={{ fontFamily:sans, fontSize:11.5, color:C.muted, marginBottom:4 }}>Where does the money you invest come from?</div>
+            <select value={profile.fundingSource} onChange={set("fundingSource")}
+              style={{ width:"100%", fontFamily:sans, fontSize:14, color:C.ink, background:C.card, border:`1px solid ${C.line}`, borderRadius:10, padding:"11px 12px", outline:"none" }}>
+              <option value="">Select one…</option>
+              <option value="employment_income">Employment income</option>
+              <option value="savings">Savings</option>
+              <option value="investments">Investments</option>
+              <option value="business_income">Business income</option>
+              <option value="inheritance">Inheritance</option>
+              <option value="family">Family</option>
+            </select>
+          </label>
         </div>
+
+        <div style={{ marginTop:20, paddingTop:16, borderTop:`1px solid ${C.line}` }}>
+          <div style={{ fontFamily:sans, fontSize:12, letterSpacing:"0.14em", textTransform:"uppercase", color:C.brass, fontWeight:700, marginBottom:10 }}>Regulatory questions</div>
+          <div style={{ display:"grid", gap:12 }}>
+            {DISCLOSURES.map(({ k, q }) => (
+              <div key={k} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+                <span style={{ fontFamily:sans, fontSize:13, color:C.ink, lineHeight:1.45 }}>{q}</span>
+                <YesNo k={k} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <label style={{ display:"flex", gap:10, alignItems:"flex-start", marginTop:18, cursor:"pointer" }}>
+          <input type="checkbox" checked={profile.agreementsAccepted}
+            onChange={(e) => setProfile(p => ({ ...p, agreementsAccepted: e.target.checked }))}
+            style={{ marginTop:2, accentColor:C.pine, width:16, height:16, flexShrink:0 }} />
+          <span style={{ fontFamily:sans, fontSize:12.5, color:C.ink, lineHeight:1.5 }}>
+            I confirm the information above is my own and accurate, and I accept the customer agreement.
+          </span>
+        </label>
+
         {profileError && (
           <div style={{ marginTop:12, fontFamily:sans, fontSize:12.5, color:"#B0563F", background:"#B0563F14", padding:"10px 12px", borderRadius:10 }}>
             {profileError}
           </div>
         )}
-        <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, marginTop:14 }}>
-          By continuing you agree to the customer agreement.
-        </p>
       </div>
     );
   }
@@ -783,7 +881,7 @@ export default function GoodSteward() {
           {live && (
             <Card>
               <Row icon={Wallet} label="Your account" right={
-                <InfoTag>{live.mode === "alpaca" ? "live" : "demo"}</InfoTag>
+                <InfoTag>{live.mode === "alpaca" ? "live" : "simulated"}</InfoTag>
               } />
               {live.txCount > 0 ? (
                 <>
@@ -817,7 +915,7 @@ export default function GoodSteward() {
                 <div style={{ marginTop:12, padding:"14px 15px", background:C.bg, border:`1px dashed ${C.line}`, borderRadius:12, textAlign:"center" }}>
                   <div style={{ fontFamily:sans, fontSize:16, color:C.ink, fontWeight:700, letterSpacing:"-0.02em" }}>Your account is ready.</div>
                   <div style={{ fontFamily:sans, fontSize:13, color:C.muted, lineHeight:1.5, marginTop:4 }}>
-                    Simulate your first purchase below. The spare change rounds up, and every $5 buys your {fw.name} ETFs.
+                    Make your first purchase below. The spare change rounds up, and every $5 buys your {fw.name} ETFs.
                   </div>
                 </div>
               )}
@@ -854,7 +952,7 @@ export default function GoodSteward() {
                   display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                 }}
               >
-                {buying ? "Rounding up…" : <>Simulate a purchase <ChevronRight size={15} /></>}
+                {buying ? "Rounding up…" : <>Record a purchase <ChevronRight size={15} /></>}
               </button>
 
               {/* Real bank feed via Plaid: link once, then Sync pulls actual transactions
@@ -880,7 +978,7 @@ export default function GoodSteward() {
               <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.45, margin:"8px 0 0", textAlign:"center" }}>
                 {user?.bankLinked
                   ? "Your bank is linked. Sync pulls real transactions into the round-up engine."
-                  : <>Simulates a card purchase. Spare change rounds up, and every $5 buys your
+                  : <>Records a card purchase. Spare change rounds up, and every $5 buys your
                      {" ETFs."}</>}
               </p>
             </Card>
@@ -980,7 +1078,7 @@ export default function GoodSteward() {
                 );
               })}
             </div>
-            <p style={{ fontFamily:sans, fontSize:11, color:C.faint, lineHeight:1.5, margin:"10px 0 0" }}>Per-fund returns aren't tracked in the sandbox yet. Target and value are real.</p>
+            <p style={{ fontFamily:sans, fontSize:11, color:C.faint, lineHeight:1.5, margin:"10px 0 0" }}>Per-fund returns aren't broken out yet. Target and value are real.</p>
           </Card>
 
           <Card>
@@ -1205,11 +1303,11 @@ export default function GoodSteward() {
 
 /* ── SHARED COMPONENTS ── */
 
-function ProfileInput({ label, value, onChange, type = "text", placeholder }) {
+function ProfileInput({ label, value, onChange, type = "text", placeholder, inputMode }) {
   return (
     <label style={{ display:"block" }}>
       <div style={{ fontFamily:sans, fontSize:11.5, color:C.muted, marginBottom:4 }}>{label}</div>
-      <input type={type} value={value} onChange={onChange} placeholder={placeholder}
+      <input type={type} value={value} onChange={onChange} placeholder={placeholder} inputMode={inputMode}
         style={{ width:"100%", fontFamily:sans, fontSize:14, color:C.ink, background:C.card, border:`1px solid ${C.line}`, borderRadius:10, padding:"11px 12px", outline:"none" }} />
     </label>
   );
@@ -1264,13 +1362,13 @@ function AuthScreen({ signup, login, onBack }) {
           </h1>
           <div style={{ display:"grid", gap:10, marginTop:4 }}>
             {mode !== "reset" && <ProfileInput label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />}
-            {mode !== "forgot" && <ProfileInput label={mode === "reset" ? "New password" : "Password"} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" />}
+            {mode !== "forgot" && <ProfileInput label={mode === "reset" ? "New password" : "Password"} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 10 characters" />}
           </div>
           {error && <div style={{ fontFamily:sans, fontSize:12.5, color:"#B0563F", background:"#B0563F14", padding:"9px 12px", borderRadius:10 }}>{error}</div>}
           {notice && <div style={{ fontFamily:sans, fontSize:12.5, color:C.pine, background:C.pine + "10", padding:"9px 12px", borderRadius:10 }}>{notice}</div>}
           {devLink && (
             <a href={devLink} style={{ fontFamily:sans, fontSize:12.5, color:C.brass, textDecoration:"underline" }}>
-              Open the reset link (shown here because this demo has no email provider)
+              Open the reset link (email isn't configured on this server)
             </a>
           )}
           <Btn onClick={submit}>{busy ? "…" : mode === "signup" ? "Create account" : mode === "login" ? "Sign in" : mode === "forgot" ? "Send reset link" : "Set new password"} <ChevronRight size={17} /></Btn>
@@ -1606,33 +1704,6 @@ function FlowStrip({ live }) {
   );
 }
 
-// Waitlist — real money is gated behind compliance, so capture demand honestly.
-function WaitlistForm({ dark = false }) {
-  const [email, setEmail] = useState("");
-  const [state, setState] = useState("idle"); // idle | loading | done | error
-  const [msg, setMsg] = useState("");
-  const submit = async () => {
-    if (state === "loading" || !email) return;
-    setState("loading");
-    try {
-      const r = await fetch("/api/waitlist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
-      const d = await r.json().catch(() => ({}));
-      if (r.ok) { setState("done"); track("waitlist_join"); }
-      else { setState("error"); setMsg(d.error || "Something went wrong."); }
-    } catch { setState("error"); setMsg("Network error. Try again."); }
-  };
-  if (state === "done")
-    return <p style={{ fontFamily: sans, fontSize: 15, fontWeight: 600, color: dark ? C.brassSoft : C.pine, textAlign: "center", margin: 0 }}>You're on the list. We'll write the day we open.</p>;
-  return (
-    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center", maxWidth: 440, margin: "0 auto" }}>
-      <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="you@example.com" aria-label="Email for the waitlist"
-        onKeyDown={(e) => e.key === "Enter" && submit()}
-        style={{ flex: "1 1 220px", fontFamily: sans, fontSize: 15, padding: "13px 14px", borderRadius: 12, border: `1px solid ${dark ? "#3a5346" : C.line}`, background: dark ? "rgba(255,255,255,0.06)" : C.card, color: dark ? "#F3EEE2" : C.ink, outline: "none" }} />
-      <button onClick={submit} style={{ background: C.teal, color: "#fff", border: "none", borderRadius: 11, padding: "13px 22px", fontFamily: sans, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{state === "loading" ? "…" : "Join the waitlist"}</button>
-      {state === "error" && <div style={{ flexBasis: "100%", textAlign: "center", fontFamily: sans, fontSize: 12.5, color: "#E0A090" }}>{msg}</div>}
-    </div>
-  );
-}
 
 // The logged-out marketing site. Three tabs, each with its own URL you can deep-link
 // and refresh on: / (home), /how-it-works, /trust. A shared top nav switches between
@@ -1694,7 +1765,7 @@ function MarketingHome({ navigate }) {
       <div style={{ ...wrap, position: "relative", zIndex: 1, textAlign: "center", padding: "clamp(56px,10vw,110px) 24px", width: "100%" }}>
         <p style={{ fontFamily: sans, fontSize: 13, letterSpacing: "0.18em", textTransform: "uppercase", color: C.brassSoft, marginBottom: 22 }}>A stewardship layer for your money</p>
         <h1 style={{ fontFamily: serif, fontWeight: 800, fontSize: "clamp(40px,7vw,72px)", lineHeight: 1.02, margin: 0, letterSpacing: "-0.045em" }}>Money is <span style={{ color: C.brassSoft }}>stored agency.</span></h1>
-        <p style={{ fontFamily: sans, fontSize: "clamp(16px,2vw,19px)", lineHeight: 1.55, color: "#D9D2C2", margin: "24px auto 0", maxWidth: 520 }}>Round up your spare change and invest it to reduce foreseeable harm.</p>
+        <p style={{ fontFamily: sans, fontSize: "clamp(16px,2vw,19px)", lineHeight: 1.55, color: "#D9D2C2", margin: "24px auto 0", maxWidth: 520 }}>Your spare change, invested in the world you'd actually choose.</p>
         <div style={{ marginTop: 36, display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
           <OpenAccountButton navigate={navigate} />
           <button onClick={() => navigate("/how-it-works")} style={{ background: "rgba(255,255,255,0.08)", color: "#F3EEE2", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 14, padding: "15px 26px", fontFamily: sans, fontSize: 16, fontWeight: 600, cursor: "pointer" }}>See how it works</button>
@@ -1760,21 +1831,14 @@ function MarketingHowItWorks({ navigate }) {
         <div style={{ ...wrap, position: "relative", zIndex: 1, textAlign: "center", padding: "clamp(56px,8vw,88px) 24px" }}>
           <h2 style={{ fontFamily: serif, fontSize: "clamp(26px,4.5vw,40px)", fontWeight: 700, margin: "0 0 20px", letterSpacing: "-0.01em" }}>Begin stewarding.</h2>
           <OpenAccountButton navigate={navigate} />
-          <p style={{ fontFamily: sans, fontSize: 12.5, color: "#9FB3A4", marginTop: 18 }}>Free to try. No money leaves your pocket.</p>
-          <div style={{ borderTop: "1px solid rgba(255,255,255,0.12)", marginTop: 40, paddingTop: 34 }}>
-            <p style={{ fontFamily: sans, fontSize: 15, color: "#D9D2C2", margin: "0 auto 16px", maxWidth: 460, lineHeight: 1.55 }}>
-              We're not open for deposits yet. Leave your email and we'll write the day we are.
-            </p>
-            <WaitlistForm dark />
-          </div>
+          <p style={{ fontFamily: sans, fontSize: 12.5, color: "#9FB3A4", marginTop: 18 }}>Opens in a few minutes. No minimum, no monthly fee.</p>
         </div>
       </section>
     </div>
   );
 }
 
-// What's real: the honest account of what's built, what's simulated, and why real
-// money is gated.
+// What's real: the honest account of how the money actually moves.
 function MarketingTrust({ navigate }) {
   const wrap = { maxWidth: 820, margin: "0 auto", padding: "0 24px" };
   const Block = ({ title, children }) => (
@@ -1796,9 +1860,9 @@ function MarketingTrust({ navigate }) {
   return (
     <div style={{ paddingBottom: 40 }}>
       <header style={{ ...wrap, padding: "clamp(28px,6vw,56px) 24px 20px" }}>
-        <p style={{ fontFamily: sans, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: C.brass, fontWeight: 700, marginBottom: 12 }}>What's real, what's simulated</p>
-        <h1 style={{ fontFamily: serif, fontSize: "clamp(28px,5vw,42px)", fontWeight: 700, color: C.ink, margin: 0, lineHeight: 1.08, letterSpacing: "-0.01em" }}>We'd rather tell you the limits than hide them.</h1>
-        <p style={{ ...p, marginTop: 16, color: C.muted }}>The whole idea here is naming the residue instead of pretending it away. It would be strange to be dishonest about the product itself. So here's exactly what happens, what's real, and what isn't yet.</p>
+        <p style={{ fontFamily: sans, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: C.brass, fontWeight: 700, marginBottom: 12 }}>What's real</p>
+        <h1 style={{ fontFamily: serif, fontSize: "clamp(28px,5vw,42px)", fontWeight: 700, color: C.ink, margin: 0, lineHeight: 1.08, letterSpacing: "-0.01em" }}>We'd rather show you the mechanics than hide them.</h1>
+        <p style={{ ...p, marginTop: 16, color: C.muted }}>The whole idea here is naming the residue instead of pretending it away. It would be strange to be vague about the product itself. So here's exactly what happens to your money, and who holds it.</p>
       </header>
 
       <Block title="How it works">
@@ -1807,29 +1871,22 @@ function MarketingTrust({ navigate }) {
 
       <Block title="What's real">
         <Item good k="Your account and login" v="Real email-and-password accounts with hashed passwords and sessions, stored in a real database that survives restarts." />
-        <Item good k="A real brokerage account" v="Onboarding opens a genuine brokerage account in your name through Alpaca, the same system a live product runs on." />
+        <Item good k="A real brokerage account" v="Onboarding opens a brokerage account in your name, held at Alpaca, our regulated brokerage partner. Your money stays yours." />
         <Item good k="Real orders" v="Round-ups place real fractional ETF orders in that account, split by your framework's allocation. You can watch them land in Alpaca's dashboard." />
         <Item good k="The round-up math" v="Integer-cent accounting with no floating-point drift, covered by a passing test suite." />
         <Item good k="The redirected residue" v="The tithe is real money movement in the ledger, not a number on a screen. It accumulates as you use the app." />
       </Block>
 
-      <Block title="What isn't real yet">
-        <Item k="The money isn't yours yet" v="Your account is funded with practice money, so nothing leaves your pocket and nothing can be lost. Everything else behaves exactly as it will on the day we open." />
-        <Item k="The ESG figures" v="The 'market similarity' and 'companies excluded' numbers are modelled estimates, labelled as such in the app, not sourced from live fund-holdings data yet." />
-        <Item k="Speed" v="A brand-new account takes a minute or two to be approved and funded, so your very first order may not appear instantly." />
-      </Block>
-
-      <Block title="Why you can't put real money in yet">
-        <p style={{ ...p, margin: "0 0 12px" }}>Choosing a portfolio on your behalf is, legally, advice, and giving advice about money is a regulated thing to do, for good reasons. We'd rather do that properly than quietly. So before we take a single real dollar, the structure gets reviewed by a securities lawyer.</p>
-        <p style={{ ...p, margin: 0 }}>Opening a real account also means verifying who you are, which the law requires and we wouldn't skip anyway. That's the work standing between today and opening day, not a missing button.</p>
+      <Block title="How the numbers are calculated">
+        <p style={{ ...p, margin: "0 0 12px" }}>The "market similarity" and "companies excluded" figures are modelled estimates from each framework's screening rules, labelled as estimates wherever they appear in the app. They are not pulled from live fund-holdings data, so treat them as a guide to how strict your screen is, not as a precise count.</p>
+        <p style={{ ...p, margin: 0 }}>Opening an account means verifying who you are, which the law requires and we wouldn't skip anyway. Approval and first funding can take a minute or two, so your very first order may not appear instantly.</p>
       </Block>
 
       <section style={{ ...wrap, padding: "34px 24px 10px", textAlign: "center" }}>
-        <p style={{ ...p, color: C.muted, marginBottom: 18 }}>Try the whole thing now, free, or leave your email and we'll write the day we open.</p>
+        <p style={{ ...p, color: C.muted, marginBottom: 18 }}>That's the whole mechanism. If it sounds like how you'd want your money handled, open an account.</p>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 26 }}>
           <button onClick={() => { track("cta_click"); navigate("/signin"); }} style={{ background: C.teal, color: "#fff", border: "none", borderRadius: 11, padding: "14px 26px", fontFamily: sans, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Open your account</button>
         </div>
-        <WaitlistForm />
       </section>
     </div>
   );

@@ -10,7 +10,8 @@ the engineering side.
 - **Credentials** — email + password logins.
 - **PII** — onboarding collects name, DOB, and address to open a brokerage account.
   (SSN/tax id is passed straight to Alpaca and never stored by us.)
-- **Money** — all sandbox / play money. No real funds move.
+- **Money** — sandbox while Alpaca credentials point at sandbox hosts. The code
+  path is the production one.
 
 ## What's hardened (done)
 - **Passwords** are hashed with `scrypt` and a per-user random salt; comparison is
@@ -42,20 +43,33 @@ the engineering side.
 ## Known gaps (honest, with severity and the fix)
 | Gap | Severity | Fix |
 |---|---|---|
-| **Reset/verify links have no email provider** — dev links gated by `ALLOW_DEV_MAIL_LINKS`. | Medium | Wire Postmark/SES; the token flow is already done. |
+| **No 2FA.** | Medium | Required before real money moves. TOTP enrolment + a recovery-code flow. |
+| **Rate limits are per-process, in memory** — they reset on restart and don't coordinate across instances. | Medium | Move the counters to Redis when the service runs on more than one instance. |
 | **Error monitoring is in-memory** — the buffer is lost on restart. | Low | Ship errors to Sentry/Datadog in production; the capture point already exists. |
-| **No CSRF tokens** — state-changing routes rely on the cookie. | Low | `SameSite=Lax` blocks the common cross-site cases; add per-form tokens before real money. |
-| **Signup reveals whether an email exists** (409). | Low | Accept the UX tradeoff or switch to a neutral "check your email" response. |
-| **Waitlist/event endpoints are unthrottled.** | Low | Add per-IP rate limiting; today they only append to a list/counter. |
-| **No 2FA.** | Low | Expected before handling real money, not before a sandbox demo. |
+| **Signup reveals whether an email exists** (409). | Low | Login no longer leaks it (constant-time miss), but signup still does. Switch to a neutral "check your email" response if this matters more than the UX cost. |
+| **No account-recovery path if the mail provider is down.** | Low | Verification and reset both depend on Resend. Add a support-side manual path. |
 
-None of these expose real money or real PII today, because there is neither — the app
-runs entirely on Alpaca's sandbox.
+## What changed in the last hardening pass
+- **CSRF** — every non-GET request must prove same-origin via `Sec-Fetch-Site`/`Origin`
+  before any handler runs. Cookie auth alone is no longer sufficient to act.
+- **Security headers** on every response: CSP (no `unsafe-inline` scripts), `nosniff`,
+  `frame-ancestors 'none'`, `Referrer-Policy`, `Permissions-Policy`, and HSTS in production.
+- **Rate limiting** on signup, login (by IP as well as by email), password reset,
+  waitlist, and the verification mailer.
+- **Login timing** — a miss now runs the same scrypt work as a hit, so response time
+  can't be used to enumerate registered emails.
+- **Passwords** — 10-character minimum, common-password blocklist, all-numeric rejected.
+- **One-time tokens** — issuing a new verification or reset link revokes the previous
+  one, so an old link in an old inbox stops working.
+- **SSNs are never stored.** The tax id goes straight to Alpaca on the account
+  application; only the last four digits are kept.
+- **`AUTO_FUND_NEW_ACCOUNTS` is off**, and the server refuses to boot if it is ever
+  enabled alongside live Alpaca credentials.
+- **`X-Forwarded-For` is only trusted when `TRUST_PROXY=1`**, so the IP recorded on a
+  signed customer agreement can't be forged by the caller.
 
 ## The honest scope line
-Real money is genuinely gated, and not by neglect. It would make Steward an investment
-adviser (RIA registration), require Alpaca's live-partner approval (typically a licensed
-entity), and mandate KYC/AML — a multi-quarter, funded-company undertaking. That's out of
-scope for a capstone *by design*. The security work above was built in the sandbox
-specifically so that going live is a matter of flipping credentials and finishing the
-email/monitoring wiring — not rebuilding the app.
+Real money is gated by paperwork, not by missing code: Alpaca production approval,
+the RIA question, and a written CIP/AML program. The application now collects and
+transmits real CIP data rather than synthetic placeholders, so what stands between
+this and live money is the approval process — see `GO-LIVE.md`.

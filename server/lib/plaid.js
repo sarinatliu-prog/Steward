@@ -6,7 +6,7 @@
 // add to server/.env:
 //   PLAID_CLIENT_ID=...
 //   PLAID_SECRET=...            (the "sandbox" secret)
-//   PLAID_ENV=sandbox          (sandbox | development | production)
+//   PLAID_ENV=sandbox           (sandbox | production — Plaid retired Development)
 //
 // The three original jobs:
 //   1. createLinkToken(userId)      — start a bank-linking session (temporary link token)
@@ -21,7 +21,24 @@ import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } fro
 
 const CLIENT_ID = process.env.PLAID_CLIENT_ID;
 const SECRET = process.env.PLAID_SECRET;
-const ENV = process.env.PLAID_ENV || "sandbox";
+// Plaid retired the Development environment; the SDK now exposes only these two.
+// This is validated rather than defaulted because the old code did
+// `PlaidEnvironments[ENV] ?? PlaidEnvironments.sandbox` — so `PLAID_ENV=production `
+// with a stray space, or the long-dead `development`, would silently run against
+// SANDBOX while every dashboard and env var claimed production. Fail at boot instead.
+const PLAID_ENVS = ["sandbox", "production"];
+const ENV = (process.env.PLAID_ENV || "sandbox").trim();
+if (!PLAID_ENVS.includes(ENV)) {
+  throw new Error(
+    `PLAID_ENV="${process.env.PLAID_ENV}" is not valid. Use one of: ${PLAID_ENVS.join(", ")}. ` +
+    `(Plaid's "development" environment no longer exists.)`
+  );
+}
+
+/** True when Plaid is pointed at real banks and real money. */
+export function plaidIsLive() {
+  return ENV === "production";
+}
 
 // Is Plaid wired up? If not, the app keeps using the manual "Make a purchase" button.
 export function plaidEnabled() {
@@ -33,7 +50,7 @@ function client() {
   if (!plaidEnabled()) throw new Error("Plaid is not configured (set PLAID_CLIENT_ID / PLAID_SECRET).");
   if (_client) return _client;
   const config = new Configuration({
-    basePath: PlaidEnvironments[ENV] ?? PlaidEnvironments.sandbox,
+    basePath: PlaidEnvironments[ENV],
     baseOptions: { headers: { "PLAID-CLIENT-ID": CLIENT_ID, "PLAID-SECRET": SECRET } },
   });
   _client = new PlaidApi(config);
