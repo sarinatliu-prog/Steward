@@ -1,112 +1,101 @@
 # Plan — The Ethical Portfolio Analyzer
 
-**One-line:** connect your brokerage, and we show you which of your holdings conflict with
-the ethical lines you care about. Read-only. We never trade and never touch your money.
-
-This doc replaces the earlier strategy files (Alpaca broker build, deposits, go-live,
-sprint, sponsor outreach). Their still-useful conclusions are folded in below.
+**One line:** connect your brokerage read-only, and see which of your holdings — including
+what's inside your index funds — conflict with the ethical lines you choose. No trading,
+no money movement, no advice.
 
 ---
 
 ## Why this shape
 
-Three earlier architectures each collapsed under one requirement:
+Three earlier product ideas each collapsed under one requirement:
 
-1. **We open and run brokerage accounts (Alpaca Broker API).** Required partner approval, a
-   CIP program, SSN handling, money movement, and put us on the edge of investment-adviser
-   status. Months of paperwork before a single real dollar.
+1. **We open and run brokerage accounts (Alpaca Broker API).** Needed partner approval, a
+   CIP program, SSN handling, money movement, and edged toward investment-adviser status —
+   months of paperwork before a single real dollar.
 2. **We pick portfolios for users.** Assigning allocations and scoring securities *is*
-   investment advice. That's the adviser prong, and it's structural — no fee model escapes it.
-3. **We move charitable money ourselves.** That's money transmission: state-by-state
-   licensing, worse than the RIA problem.
+   investment advice; no fee model escapes that.
+3. **We move charitable money ourselves.** That's money transmission — state-by-state
+   licensing, worse than the adviser problem.
 
-The analyzer sidesteps all three. We read holdings and explain them. We never select
-securities, never hold money, never open accounts. There is no advice (we recommend
-nothing), no custody (we touch nothing), and no brokerage relationship of our own (the user
-keeps theirs). It is the piece with the least regulatory surface and the most obvious value:
-**most people have no idea what's actually inside their portfolio.**
+The analyzer sidesteps all three. We **read and explain**. We never select securities,
+hold money, or open accounts. No advice, no custody, no brokerage relationship of our own —
+the least regulatory surface, and the most obviously useful thing: **most people have no
+idea what's actually inside their portfolio, especially their index funds.**
 
-## What's built and proven
+## What's built
 
-The backend is done and tested end-to-end against SnapTrade's live sandbox:
+Backend, tested end-to-end against SnapTrade's live sandbox:
 
-- `server/lib/snaptrade.js` — register user, mint a **read-only** connection portal, read
-  positions across all connected accounts. Uses the official SDK (HMAC signing is the
-  classic time-sink; we don't hand-roll it).
-- `server/lib/screens.js` — the ethical screens. Each flag names offending companies by
-  ticker with a one-line, checkable reason. A curated starter set of large, widely-held
-  names — **not** a complete holdings database, and the UI says so.
-- `server/lib/analyzer.js` — pure function: (positions, active screens) → flagged holdings
-  plus per-flag exposure totals. 14 unit tests.
-- `server/lib/funds.js` — fund look-through: known index funds and their screened
-  constituents, so we can see inside VOO/SPY/VTI/QQQ and name what's there.
-- Routes: `GET /api/screens` (public catalogue), `GET /api/lookup?symbol=` (public
-  single-ticker check — powers the no-login hero widget), `POST /api/screens/select`,
-  `POST /api/brokerage/connect` (returns portal URL), `GET /api/analysis`.
+- **`screens.js`** — the ethical screens. 12 flags, ~83 companies, each with a plain,
+  checkable one-line reason. A curated set of widely-held names, not a complete database —
+  the UI says so.
+- **`funds.js`** — fund look-through. Major index funds (VOO, SPY, IVV, VTI, ITOT, QQQ, and
+  the common mutual-fund equivalents) mapped to the screened companies they hold, from
+  published constituents. Unknown funds stay "not analyzed."
+- **`analyzer.js`** — pure function. Direct stocks get dollar attribution; funds get
+  company-level look-through (we name the companies inside, never fake per-name dollars).
+  Plus `lookupSymbol()` for the public one-ticker hero widget. 21 unit tests.
+- **`snaptrade.js`** — read-only connection: register a user, mint a read-only portal, read
+  positions. Official SDK (HMAC signing is the classic time-sink; we don't hand-roll it).
+- **Routes:** public `GET /api/lookup` and `GET /api/screens`; session-gated
+  `POST /api/screens/select`, `POST /api/brokerage/connect`, `GET /api/analysis`.
 
-Verified flow: signup → pick screens → connect the SnapTrade sandbox → analysis returns
-real holdings with GOOGL flagged for surveillance, while funds and crypto are correctly
-marked "not analyzed" rather than "clean."
+Frontend (`src/Analyzer.jsx`): a dark-green liquid-glass hero with a **live ticker
+analyzer** (auto-loads VOO so a visitor instantly sees the S&P 500 holds 42 flagged
+companies), then a light "paper" theme for auth and the signed-in dashboard.
 
-## Honesty rules (non-negotiable, this is the product's whole premise)
+## Honesty rules (non-negotiable — this is the whole premise)
 
-- Every flag is a plain factual claim about what a company does. No opaque ESG scores.
-- We analyze **individual stocks**. A broad index fund holds hundreds of names; we do NOT
-  claim to see inside one. An unflagged fund is "not analyzed," never "clean."
-- A clean result means "none of the names we track," never "audited clean." Say it in the UI.
-- The user picks the flags. We only ever explain, never judge for them.
+- Every flag is a plain factual claim about what a company does. No opaque scores.
+- We look inside the funds we **know**; unknown funds are "not analyzed," never "clean."
+- A clean result means "none of the names we track," not "audited clean."
+- We name the companies inside a fund; we never invent a per-company dollar figure.
+- Index membership shifts over time — the constituent lists are published-holdings-based,
+  and the UI discloses that.
 
 ---
 
 ## Roadmap
 
-### Now — the analyzer (in progress)
-- [x] SnapTrade read-only backend + screens + analyzer, tested against live sandbox
-- [ ] Frontend: pick flags → connect brokerage → results with reasons and exposure
-- [ ] Copy/positioning around "see what you own"
-
-### Next — tear out the dead broker code
-Remove what the old architecture needed and this one doesn't: `account-service.js`, the
-deposit/withdraw/transfer routes and funding screen, the CIP onboarding and SSN handling,
-firm-account journaling, and every `ALPACA_*` variable. Keep auth, the security hardening,
-Plaid, the round-up engine, and the ledger — the giving rail (below) still wants them.
+### Now — deepen the analyzer
+- [x] Screens, fund look-through, read-only SnapTrade, live hero widget — all shipped.
+- [ ] **Live holdings data.** The fund constituent lists are curated and can go stale.
+      Pull real holdings from a data provider so a fund's contents are never out of date.
+- [ ] **Wider coverage** — sector, ESG, international, and more mutual funds; more companies
+      per screen.
+- [ ] **Symbol normalization** — class shares differ by broker (`BRK.B` vs `BRK-B` vs
+      `BRKB`); normalize before matching so nothing slips through on real connections.
 
 ### Later — giving (the RoundUp.org model)
-When the analyzer has users, add giving as a **separate rail**, structured exactly like
-RoundUp.org: round-ups accrue as a number, one monthly card charge via Stripe, funds to a
-third-party 501(c)(3) DAF that receipts and disburses. **We never hold the money** — the
-agent-of-payee structure (a written agency agreement with the sponsor) is what keeps this
-out of money-transmission territory. Confirm with counsel before taking a dollar.
-
-- **First call:** Change (getchange.io) — the infrastructure behind RoundUp.org; the 1.3M
-  nonprofit directory and Our Change Foundation (the DAF) come bundled. Then Ren/Renaissance
-  Charitable and AEF, whose business is platform partnerships.
-- The round-up engine (integer-cent, 17 tests) and Plaid sync are already built for this.
+When the analyzer has users, add giving as a **separate rail**: round-ups accrue as a
+number, one monthly card charge via Stripe, funds to a third-party 501(c)(3) DAF that
+receipts and disburses. **We never hold the money** — the agent-of-payee structure (a
+written agency agreement with the sponsor) keeps this out of money-transmission territory.
+Confirm with counsel before taking a dollar. First call: Change (getchange.io), the
+infrastructure behind RoundUp.org. The round-up engine (integer-cent, 17 tests) already
+exists for this. See [`compliance/REGULATORY.md`](compliance/REGULATORY.md).
 
 ### Later — trading (optional, only if it earns it)
 SnapTrade can place orders "where enabled," but OAuth connections are read-only and
-fractional support varies by broker. Only pursue with explicit per-trade user approval
-(discretionary authority is an adviser hallmark) and after verifying fractional coverage.
+fractional support varies by broker. Only with explicit per-trade user approval
+(discretionary authority is an adviser hallmark), and after verifying fractional coverage.
 
 ---
 
 ## Entity notes (Elevate Opportunity Inc.)
 
-- **The platform doesn't need to be a nonprofit.** RoundUp.org is a for-profit partnered
-  with a separate foundation. Mission is served by where the money goes, not the operator's
-  tax status.
+- **The platform needn't be a nonprofit.** RoundUp.org is a for-profit partnered with a
+  separate foundation. Mission is served by where money goes, not the operator's tax status.
 - **Two 501(c)(3) clocks:** Form 1023-EZ clears ~22 days but *disqualifies* any org that
-  intends to maintain donor-advised funds, and caps gross receipts at $50k. Full Form 1023
-  is ~6 months. So "we'll be a DAF sponsor ourselves" is the slow, heavy path — launch on a
-  third-party sponsor and revisit only if there's reason to.
-- Elevate's most useful near-term roles: the operating entity, or a recipient nonprofit on
-  the fast EZ track — neither of which blocks the analyzer.
+  intends to sponsor donor-advised funds, and caps gross receipts at $50k. Full Form 1023 is
+  ~6 months. So "be our own DAF sponsor" is the slow, heavy path — launch on a third-party
+  sponsor and revisit only if there's reason to.
+- The analyzer needs none of this; it's relevant only to the future giving rail.
 
 ## Config
 
-`server/.env` (gitignored) holds `SNAPTRADE_CLIENT_ID` and `SNAPTRADE_CONSUMER_KEY`.
-Everything else the analyzer needs is already wired. `RESEND_API_KEY` + a verified domain is
-still required for real verification/reset email; `APP_URL` sets the base for email links.
-
-See `SECURITY.md` for the security posture and `compliance/` for the CIP/AML drafts (mostly
-relevant to the later giving rail, not the analyzer).
+`server/.env` (git-ignored): `SNAPTRADE_CLIENT_ID`, `SNAPTRADE_CONSUMER_KEY`.
+For production email (verification / password reset): `RESEND_API_KEY` + a verified sending
+domain, and `APP_URL` for the links. `DATABASE_URL` switches storage from a local JSON file
+to Postgres. See [`SECURITY.md`](SECURITY.md).
