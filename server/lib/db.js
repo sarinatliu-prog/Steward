@@ -139,36 +139,14 @@ export function createUser({ email, passHash, salt }) {
   const now = Date.now();
   db.users[id] = {
     id, email, passHash, salt, createdAt: now,
-    profile: null,
-    alpacaAccountId: null,
-    // Plaid bank connection: the saved access token, and the sync cursor that
-    // remembers which transactions we've already counted (so nothing double-counts).
-    plaidAccess: null,   // { accessToken, itemId } once a bank is linked
-    plaidCursor: null,   // Plaid /transactions/sync cursor
-    // Real funding: the Alpaca ACH relationship created from a Plaid processor
-    // token (see server/lib/account-service.js), once the user picks a bank
-    // account to fund from. `transfers` mirrors deposits/withdrawals for the UI.
-    achRelationshipId: null,
-    bankName: null,
-    transfers: [],
+    emailVerified: false,
     // SnapTrade read-only brokerage connection. userSecret is a credential issued
     // once by SnapTrade; in production it must be encrypted at rest.
     snaptrade: null,      // { userId, userSecret, connectedAt } once registered
     // Which ethical screens the user turned on, e.g. ["fossil_fuels","weapons"].
     screens: [],
-    // per-user portfolio state
-    config: {
-      framework: "Broad Ethical",
-      holdings: [{ symbol: "ESGV", a: 45 }, { symbol: "VSGX", a: 25 }, { symbol: "EAGG", a: 20 }, { symbol: "SUSA", a: 10 }],
-      tithePct: 2, contribution: 500, screen: "moderate",
-    },
-    transactions: [],
-    clearingCents: 0,
-    investedCents: 0,
-    investedBySymbol: {},
-    pendingInvestCents: 0,
-    pendingBySymbol: {},   // per-symbol remainder waiting to reach Alpaca's $1 minimum
-    orders: [],
+    // Append-only record of security-relevant events.
+    audit: [],
   };
   db.byEmail[email.toLowerCase()] = id;
   save();

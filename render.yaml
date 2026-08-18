@@ -1,18 +1,15 @@
-# Render Blueprint — deploys Good Steward as a single web service that serves both
-# the /api routes and the built frontend, plus a Postgres database for durable state.
-# Import this repo at https://dashboard.render.com/blueprints and Render reads this file.
+# Render Blueprint — deploys Steward as a single web service serving both the /api
+# routes and the built frontend, plus a Postgres database for durable state.
+# Import this repo at https://dashboard.render.com/blueprints.
 
 databases:
-  # Without this, state lives in a JSON file on Render's EPHEMERAL disk — which is
-  # wiped on every deploy AND every wake-from-sleep on the free plan. That would
-  # silently destroy users, portfolios, and their Alpaca account links.
   - name: steward-db
     databaseName: steward
     plan: free
 
 services:
   - type: web
-    name: good-steward
+    name: steward
     runtime: node
     plan: free
     buildCommand: npm install && npm run build
@@ -20,80 +17,26 @@ services:
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
-      # Wired automatically from the database above — no manual copy/paste.
       - key: DATABASE_URL
         fromDatabase:
           name: steward-db
           property: connectionString
 
-      # ── Alpaca sandbox credentials ──────────────────────────────────────────
-      # sync:false keeps real values OUT of git — paste them once into Render's
-      # Environment tab (encrypted at rest).
-      - key: ALPACA_CLIENT_ID
+      # ── SnapTrade (read-only brokerage connection) ─────────────────────────
+      # sync:false keeps secrets out of git — paste them into Render's Environment tab.
+      - key: SNAPTRADE_CLIENT_ID
         sync: false
-      - key: ALPACA_CLIENT_SECRET
-        sync: false
-
-      # The pre-funded $50k sandbox firm/sweep account we journal cash from, so a new
-      # user is funded INSTANTLY instead of waiting 10–30 min for simulated ACH.
-      # Find it: node --env-file=server/.env server/alpaca-find-firm.mjs
-      # (or the "Firm Balance" tab in the Broker dashboard)
-      - key: ALPACA_FIRM_ACCOUNT_ID
+      - key: SNAPTRADE_CONSUMER_KEY
         sync: false
 
-      # Per-user onboarding credit. Kept low because JNLC journals have a daily cap
-      # (~$1,000/day across all users by default) — $100 covers plenty of $5 sweeps.
-      - key: ALPACA_FUND_AMOUNT
-        value: "100"
-
-      # Sandbox hosts. Pointing these at the live hosts would require the legal work
-      # in GO-LIVE.md — do not change them casually.
-      - key: ALPACA_AUTH_URL
-        value: https://authx.sandbox.alpaca.markets
-      - key: ALPACA_BASE_URL
-        value: https://broker-api.sandbox.alpaca.markets
-
-      # OFF. When this was "1", every new account was gifted $100 by journaling it
-      # out of the firm account. That is harmless against sandbox play money and is
-      # real company money in production — a hundred signups is ten thousand dollars.
-      # With it off, users fund their own account from their own bank via the Deposit
-      # screen, which is the model the product actually ships. The server refuses to
-      # boot if this is ever "1" alongside live Alpaca credentials.
-      - key: AUTO_FUND_NEW_ACCOUNTS
-        value: "0"
-
-      # ── Email (real password-reset + verification emails via Resend) ────────
-      # Get a free key at https://resend.com → API Keys, then paste it into
-      # Render's Environment tab (sync:false keeps it out of git). Without it,
-      # the app falls back to logging the link instead of emailing it.
+      # ── Email (verification + password reset via Resend) ───────────────────
       - key: RESEND_API_KEY
         sync: false
-      # Optional. Defaults to Resend's shared "onboarding@resend.dev" sender,
-      # which only delivers to your own Resend account email. To email anyone,
-      # verify a domain in Resend and set this to a sender on it, e.g.
-      # "Good Steward <hello@yourdomain.com>".
       - key: MAIL_FROM
         sync: false
-
-      # Render sets RENDER_EXTERNAL_URL automatically and the mailer falls back to it,
-      # but set APP_URL once you have a custom domain — it is what every verification
-      # and password-reset link in an email is built from.
       - key: APP_URL
         sync: false
 
-      # Render terminates TLS and sets X-Forwarded-For. Without this the IP recorded
-      # on each signed customer agreement is the proxy's, not the user's. Only ever
-      # set this when actually running behind a trusted proxy.
+      # Render terminates TLS and sets X-Forwarded-For; trust it for rate-limiting.
       - key: TRUST_PROXY
         value: "1"
-
-      # ── Plaid (real bank-transaction feed) ──────────────────────────────────
-      # Get sandbox keys at https://dashboard.plaid.com → Developers → Keys, then
-      # paste them into Render's Environment tab (sync:false keeps them out of git).
-      # Without these, the app keeps using the manual "Make a purchase" button.
-      - key: PLAID_CLIENT_ID
-        sync: false
-      - key: PLAID_SECRET
-        sync: false
-      - key: PLAID_ENV
-        value: sandbox
