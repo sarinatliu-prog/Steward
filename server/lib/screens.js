@@ -49,6 +49,17 @@ export const SCREENS = [
       MPC: "Marathon Petroleum — petroleum refining.",
       VLO: "Valero — petroleum refining.",
       PSX: "Phillips 66 — petroleum refining.",
+      WMB: "Williams Companies — natural gas pipelines.",
+      OKE: "ONEOK — natural gas gathering and pipelines.",
+      DVN: "Devon Energy — oil & gas exploration and production.",
+      FANG: "Diamondback Energy — oil & gas exploration and production.",
+      EOG: "EOG Resources — oil & gas exploration and production.",
+      HES: "Hess — oil & gas exploration and production.",
+      BKR: "Baker Hughes — oilfield services.",
+      CTRA: "Coterra Energy — oil & gas exploration and production.",
+      TRP: "TC Energy — oil & gas pipelines.",
+      EPD: "Enterprise Products — natural gas & petrochemical pipelines.",
+      ET: "Energy Transfer — oil & gas pipelines.",
     },
   },
   {
@@ -63,6 +74,11 @@ export const SCREENS = [
       BA: "Boeing — commercial and military aircraft, defense.",
       LHX: "L3Harris — defense electronics and systems.",
       HII: "Huntington Ingalls — naval warships.",
+      LDOS: "Leidos — defense and intelligence contracting.",
+      TXT: "Textron — military aircraft and armored vehicles.",
+      KTOS: "Kratos — drones and defense systems.",
+      AVAV: "AeroVironment — military drones.",
+      BAESY: "BAE Systems — defense prime; weapons and vehicles.",
     },
   },
   {
@@ -74,6 +90,8 @@ export const SCREENS = [
       RGR: "Sturm Ruger — civilian firearms manufacturer.",
       OLN: "Olin — Winchester ammunition.",
       VSTO: "Vista Outdoor — ammunition and firearms accessories.",
+      POWW: "AMMO Inc — ammunition manufacturer.",
+      AOUT: "American Outdoor Brands — shooting and outdoor accessories.",
     },
   },
   {
@@ -85,6 +103,9 @@ export const SCREENS = [
       PM: "Philip Morris International — cigarettes and nicotine.",
       BTI: "British American Tobacco — cigarettes and nicotine.",
       TPB: "Turning Point Brands — smokeless and alternative tobacco.",
+      UVV: "Universal Corp — leaf tobacco supplier.",
+      IMBBY: "Imperial Brands — cigarettes and nicotine.",
+      JAPAY: "Japan Tobacco — cigarettes and nicotine.",
     },
   },
   {
@@ -99,6 +120,10 @@ export const SCREENS = [
       CZR: "Caesars Entertainment — casinos and sportsbook.",
       PENN: "PENN Entertainment — casinos and sportsbook.",
       FLUT: "Flutter — sports betting (FanDuel, Paddy Power).",
+      BYD: "Boyd Gaming — casinos.",
+      CHDN: "Churchill Downs — racetracks and betting.",
+      RSI: "Rush Street Interactive — online casino and sportsbook.",
+      GDEN: "Golden Entertainment — casinos and taverns.",
     },
   },
   {
@@ -111,6 +136,7 @@ export const SCREENS = [
       STZ: "Constellation Brands — beer, wine, spirits.",
       DEO: "Diageo — spirits (Johnnie Walker, Guinness).",
       SAM: "Boston Beer — beer and hard seltzer.",
+      "BF.B": "Brown-Forman — spirits (Jack Daniel's).",
     },
   },
   {
@@ -159,6 +185,19 @@ export const SCREENS = [
     tickers: {
       GEO: "GEO Group — private prisons and detention centers.",
       CXW: "CoreCivic — private prisons and detention centers.",
+    },
+  },
+  {
+    key: "payday_lending",
+    label: "Predatory lending",
+    blurb: "High-interest payday, title, and subprime consumer lenders.",
+    tickers: {
+      WRLD: "World Acceptance — high-interest consumer installment loans.",
+      EZPW: "EZCORP — pawn loans.",
+      FCFS: "FirstCash — pawn and consumer finance.",
+      ENVA: "Enova — online subprime consumer lending.",
+      CURO: "CURO Group — payday and title loans.",
+      OPRT: "Oportun — subprime consumer lending.",
     },
   },
 ];

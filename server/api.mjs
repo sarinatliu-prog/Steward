@@ -35,6 +35,23 @@ async function readBody(req) {
   for await (const chunk of req) raw += chunk;
   try { return raw ? JSON.parse(raw) : {}; } catch { return null; }
 }
+
+// The client's IP, used for rate-limiting. TRUST_PROXY must be set explicitly:
+// blindly believing X-Forwarded-For lets any caller forge their apparent IP. On
+// Render the platform sets the header and terminates TLS, so it's trustworthy there.
+const TRUST_PROXY = process.env.TRUST_PROXY === "1";
+function clientIp(req) {
+  if (TRUST_PROXY) {
+    const fwd = req.headers["x-forwarded-for"];
+    if (fwd) {
+      const first = String(fwd).split(",")[0].trim();
+      if (first) return first;
+    }
+  }
+  const addr = req.socket?.remoteAddress || "";
+  return addr.replace(/^::ffff:/, "") || "0.0.0.0";
+}
+
 function currentUser(req) {
   const token = sessionFromCookie(req.headers.cookie);
   const session = db.getSession(token);
@@ -111,18 +128,17 @@ function csrfRejected(req) {
 }
 
 // ── Security headers ──────────────────────────────────────────────────────────
-// The app ships no inline <script>, but it does use inline style attributes
-// throughout, so style-src needs 'unsafe-inline' while script-src does not.
-// connect-src stays 'self' plus Plaid, which the Link SDK talks to directly.
+// The app ships no inline <script>, but it uses inline style attributes throughout,
+// so style-src needs 'unsafe-inline' while script-src does not. The SnapTrade portal
+// is a full-page redirect (app.snaptrade.com), so it needs no frame/connect grant.
 const IS_PROD = !!process.env.DATABASE_URL;
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' https://cdn.plaid.com",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' https://fonts.gstatic.com data:",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self' data:",
   "img-src 'self' data:",
-  "connect-src 'self' https://*.plaid.com",
-  "frame-src https://cdn.plaid.com",
+  "connect-src 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
   "base-uri 'none'",
@@ -201,7 +217,7 @@ const server = createServer(async (req, res) => {
 
   // ---- health ----
   if (req.method === "GET" && path === "/api/health") {
-    return sendJson(res, 200, { ok: true, alpaca: ALPACA, errors: errorLog.length, ...db.stats() });
+    return sendJson(res, 200, { ok: true, snaptrade: snaptradeEnabled(), errors: errorLog.length, ...db.stats() });
   }
 
   // ---- waitlist: capture demand while real money is gated behind compliance ----

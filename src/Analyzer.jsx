@@ -33,13 +33,88 @@ const money = (cents) => "$" + (cents / 100).toLocaleString("en-US", { minimumFr
 
 export default function Analyzer() {
   const [user, setUser] = useState(undefined); // undefined = loading, null = signed out
+  // Signed-out visitors see the landing page first; "get started" opens auth.
+  const [showAuth, setShowAuth] = useState(false);
   useEffect(() => {
     api("/api/me").then((d) => setUser(d.user)).catch(() => setUser(null));
   }, []);
 
   if (user === undefined) return <Splash />;
-  if (!user) return <Auth onAuthed={setUser} />;
-  return <Dashboard user={user} onSignOut={() => setUser(null)} />;
+  if (user) return <Dashboard user={user} onSignOut={() => { setUser(null); setShowAuth(false); }} />;
+  if (showAuth) return <Auth onAuthed={setUser} onBack={() => setShowAuth(false)} />;
+  return <Landing onStart={() => setShowAuth(true)} />;
+}
+
+// ── Landing ─────────────────────────────────────────────────────────────────
+function Landing({ onStart }) {
+  const wrap = { maxWidth: 960, margin: "0 auto", padding: "0 24px" };
+  const steps = [
+    { n: "01", t: "Choose your lines", b: "Fossil fuels, weapons, tobacco, surveillance, gambling — turn on the ones you care about. We only ever flag what you flag." },
+    { n: "02", t: "Connect, read-only", b: "Link your brokerage through SnapTrade. We can see your holdings — we can never trade them or move your money." },
+    { n: "03", t: "See what you own", b: "The individual stocks that cross your lines, each with a plain reason. No score to argue with — just the facts." },
+  ];
+  return (
+    <Shell>
+      {/* nav */}
+      <div style={{ borderBottom: `1px solid ${C.line}`, background: "#F7F5F1" }}>
+        <div style={{ ...wrap, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px" }}>
+          <span style={{ fontFamily: serif, fontSize: 20, fontWeight: 700, color: C.pine, letterSpacing: "-0.02em" }}>Steward</span>
+          <button onClick={onStart} style={{ ...primaryBtn, marginTop: 0, width: "auto", padding: "9px 18px", fontSize: 14 }}>Get started</button>
+        </div>
+      </div>
+
+      {/* hero */}
+      <header style={{ background: `radial-gradient(120% 90% at 50% -10%, ${C.pineSoft} 0%, ${C.pine} 60%, #0C1F18 100%)`, color: C.cream }}>
+        <div style={{ ...wrap, textAlign: "center", padding: "clamp(64px,11vw,120px) 24px" }}>
+          <p style={{ fontFamily: sans, fontSize: 13, letterSpacing: "0.16em", textTransform: "uppercase", color: C.brassSoft, marginBottom: 20 }}>The ethical portfolio analyzer</p>
+          <h1 style={{ fontFamily: serif, fontWeight: 800, fontSize: "clamp(38px,7vw,68px)", lineHeight: 1.03, margin: 0, letterSpacing: "-0.04em" }}>
+            You don't know<br />what you own.
+          </h1>
+          <p style={{ fontFamily: sans, fontSize: "clamp(16px,2vw,19px)", lineHeight: 1.55, color: "#CBD8CF", margin: "24px auto 0", maxWidth: 500 }}>
+            Connect your brokerage and we'll show you which of your holdings cross the ethical lines you care about — and exactly why.
+          </p>
+          <div style={{ marginTop: 34, display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+            <button onClick={onStart} style={{ background: C.brass, color: "#231A0C", border: "none", borderRadius: 12, padding: "15px 30px", fontFamily: sans, fontSize: 16, fontWeight: 700, cursor: "pointer" }}>Analyze my portfolio →</button>
+          </div>
+          <p style={{ fontFamily: sans, fontSize: 12.5, color: "#8FA599", marginTop: 18 }}>Read-only. We never trade, and never move your money.</p>
+        </div>
+      </header>
+
+      {/* steps */}
+      <section style={{ ...wrap, padding: "clamp(48px,8vw,88px) 24px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 18 }}>
+          {steps.map((s) => (
+            <div key={s.n} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 18, padding: "24px 22px" }}>
+              <div style={{ fontFamily: serif, fontSize: 15, color: C.brass, fontWeight: 700, marginBottom: 8 }}>{s.n}</div>
+              <div style={{ fontFamily: serif, fontSize: 20, color: C.pine, fontWeight: 700, letterSpacing: "-0.01em" }}>{s.t}</div>
+              <p style={{ fontFamily: sans, fontSize: 14, color: C.muted, lineHeight: 1.55, margin: "10px 0 0" }}>{s.b}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* honesty band */}
+      <section style={{ background: C.card, borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}` }}>
+        <div style={{ ...wrap, maxWidth: 680, textAlign: "center", padding: "clamp(48px,8vw,80px) 24px" }}>
+          <h2 style={{ fontFamily: serif, fontSize: "clamp(24px,4vw,34px)", color: C.pine, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>We'd rather under-claim than mislead.</h2>
+          <p style={{ fontFamily: sans, fontSize: 16, color: C.ink, lineHeight: 1.65, margin: "18px 0 0" }}>
+            We screen individual stocks against a curated list of companies, and tell you the reason for every flag. We don't look inside broad index funds and pretend we can — an unanalyzed fund is marked as such, not called clean. A clean result means "none of the names we track," never "audited pure." You draw the lines; we just show you where your money already sits.
+          </p>
+        </div>
+      </section>
+
+      {/* final CTA */}
+      <section style={{ ...wrap, textAlign: "center", padding: "clamp(56px,9vw,96px) 24px" }}>
+        <h2 style={{ fontFamily: serif, fontSize: "clamp(26px,4.5vw,40px)", color: C.pine, fontWeight: 700, margin: "0 0 22px", letterSpacing: "-0.02em" }}>See what you own.</h2>
+        <button onClick={onStart} style={{ ...primaryBtn, marginTop: 0, width: "auto", padding: "15px 30px", fontSize: 16 }}>Get started</button>
+      </section>
+
+      <footer style={{ ...wrap, borderTop: `1px solid ${C.line}`, padding: "24px", display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+        <span style={{ fontFamily: serif, fontSize: 15, fontWeight: 700, color: C.muted }}>Steward</span>
+        <span style={{ fontFamily: sans, fontSize: 12.5, color: C.faint }}>Read-only portfolio analysis. Not investment advice.</span>
+      </footer>
+    </Shell>
+  );
 }
 
 function Splash() {
@@ -51,7 +126,7 @@ function Splash() {
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
-function Auth({ onAuthed }) {
+function Auth({ onAuthed, onBack }) {
   const [mode, setMode] = useState("signup"); // signup | login
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -68,7 +143,8 @@ function Auth({ onAuthed }) {
 
   return (
     <Shell>
-      <div style={{ maxWidth: 400, margin: "0 auto", padding: "64px 24px" }}>
+      <div style={{ maxWidth: 400, margin: "0 auto", padding: "48px 24px" }}>
+        {onBack && <button onClick={onBack} style={{ ...textBtn, marginBottom: 20, color: C.muted }}>← Back</button>}
         <h1 style={{ fontFamily: serif, fontSize: 30, color: C.pine, margin: "0 0 6px", letterSpacing: "-0.02em" }}>
           {mode === "signup" ? "Create your account" : "Welcome back"}
         </h1>
