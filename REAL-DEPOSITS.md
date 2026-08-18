@@ -227,23 +227,31 @@ in the same session — needs a click-through of Plaid Link's sandbox UI):
 
 ---
 
-## One open problem to flag, not solve
+## The residue: decided, and shipping as beta
 
-**The residue can't work the way it does now.**
+**The constraint.** Alpaca journals move firm↔customer only, never customer→customer.
+Once the money is genuinely the user's, we cannot journal the tithe from their account
+to a charity account. That ruled out the original design.
 
-Today the tithe is journaled firm → charity account. Alpaca journals only move
-**firm ↔ customer** — never customer → customer. So once the money is genuinely the
-user's, we cannot journal it from their account to a charity account.
+**The decision.** The residue is routed through the **sweep account**, and the user sets
+what percentage of each sweep goes there — that is the existing stewardship-rate slider,
+now doing real work. The sweep account is the firm-side account we already operate, so
+the movement is customer→firm (allowed) rather than customer→customer (not). Disbursement
+from the sweep account to the charity partner happens off the brokerage rail entirely.
 
-Options to discuss (needs Alpaca + legal input, not a code decision):
-- Withdraw the residue to a real charity via a payments rail (Stripe/DAF).
-- Partner with a donor-advised fund.
-- Hold the residue as cash in the user's own account, earmarked, and let *them* disburse.
+**What that leaves open, and who owns it:**
+- Which charity partner, and whether they take funds directly or via a donor-advised fund.
+- The tax treatment of a user-directed gift that pools in our sweep account before it is
+  disbursed — a question for the attorney, not the code. Whether the user or the entity is
+  the donor of record changes the answer.
+- Whether pooled, undisbursed residue sitting in the sweep account has custody
+  implications. Raise it with Alpaca in the production application rather than after.
 
-Don't build around this yet — just don't let it surprise us at launch. It's the
-signature feature, so it deserves a real answer.
-
----
+**Until those are answered, Giving ships as beta.** The rate applies, the amount accrues
+and is shown to the user, and nothing is disbursed. The Giving screen says exactly that,
+and says the user will be told before the first payment goes out and can opt out until
+then. Accruing money against a promise we haven't finished building is only honest if the
+user can see the state they are actually in.
 
 ## Order of work
 

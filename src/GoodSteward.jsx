@@ -1125,8 +1125,14 @@ export default function GoodSteward() {
     const givingSeries = mons.map((m, i) => ({ m, v: (givenToDate || annualDonation / 12) * ((i + 1) / 6) }));
     return (
       <div>
-        <Header title="Giving" sub="The residue, redirected" />
+        <Header title="Giving" sub="The residue, redirected" badge />
         <div style={{ padding:"0 18px" }}>
+          <div style={{ marginBottom:14, padding:"11px 13px", background:C.amber+"14", border:`1px solid ${C.amber}33`, borderRadius:12, fontFamily:sans, fontSize:12.5, color:C.ink, lineHeight:1.55 }}>
+            <b>Giving is in beta.</b> Your stewardship rate is applied to every sweep and the
+            amount is held in the sweep account, tracked here. Disbursement to the charity
+            partner isn't live yet — you'll be told before the first payment goes out, and you
+            can change your rate or opt out at any time until then.
+          </div>
           <div style={{ background:C.pine, borderRadius:18, padding:"20px 22px", color:"#EAF2F0" }}>
             <span style={{ fontFamily:sans, fontSize:12.5, fontWeight:600, color:"#8FB5AC" }}>Given to date</span>
             <div style={{ marginTop:4 }}>
@@ -1763,14 +1769,12 @@ function MarketingHome({ navigate }) {
     <header style={{ background: `radial-gradient(120% 90% at 50% -10%, ${C.pineSoft} 0%, ${C.pine} 55%, #14271F 100%)`, color: "#F3EEE2", position: "relative", overflow: "hidden", minHeight: "calc(100dvh - 62px)", display: "flex", alignItems: "center" }}>
       <Grain />
       <div style={{ ...wrap, position: "relative", zIndex: 1, textAlign: "center", padding: "clamp(56px,10vw,110px) 24px", width: "100%" }}>
-        <p style={{ fontFamily: sans, fontSize: 13, letterSpacing: "0.18em", textTransform: "uppercase", color: C.brassSoft, marginBottom: 22 }}>A stewardship layer for your money</p>
         <h1 style={{ fontFamily: serif, fontWeight: 800, fontSize: "clamp(40px,7vw,72px)", lineHeight: 1.02, margin: 0, letterSpacing: "-0.045em" }}>Money is <span style={{ color: C.brassSoft }}>stored agency.</span></h1>
         <p style={{ fontFamily: sans, fontSize: "clamp(16px,2vw,19px)", lineHeight: 1.55, color: "#D9D2C2", margin: "24px auto 0", maxWidth: 520 }}>Your spare change, invested in the world you'd actually choose.</p>
         <div style={{ marginTop: 36, display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
           <OpenAccountButton navigate={navigate} />
           <button onClick={() => navigate("/how-it-works")} style={{ background: "rgba(255,255,255,0.08)", color: "#F3EEE2", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 14, padding: "15px 26px", fontFamily: sans, fontSize: 16, fontWeight: 600, cursor: "pointer" }}>See how it works</button>
         </div>
-        <p style={{ fontFamily: sans, fontSize: 12.5, color: "#9FB3A4", marginTop: 18 }}>No claim of moral purity. Ethical investing is asymptotic.</p>
       </div>
     </header>
   );
@@ -1941,8 +1945,14 @@ function FontInjector() {
 function Grain() {
   return <div style={{ position:"absolute", inset:0, opacity:0.06, pointerEvents:"none", backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")" }} />;
 }
-function Header({ title, sub }) {
-  return <div style={{ padding:"26px 22px 14px" }}><div style={{ fontFamily:sans, fontSize:12.5, color:C.muted, fontWeight:500 }}>{sub}</div><h1 style={{ fontFamily:sans, fontSize:22, fontWeight:700, color:C.ink, margin:"3px 0 0", letterSpacing:"-0.03em" }}>{title}</h1></div>;
+function Header({ title, sub, badge }) {
+  return <div style={{ padding:"26px 22px 14px" }}><div style={{ fontFamily:sans, fontSize:12.5, color:C.muted, fontWeight:500 }}>{sub}</div><div style={{ display:"flex", alignItems:"center", gap:9, margin:"3px 0 0" }}><h1 style={{ fontFamily:sans, fontSize:22, fontWeight:700, color:C.ink, margin:0, letterSpacing:"-0.03em" }}>{title}</h1>{badge && <BetaTag />}</div></div>;
+}
+// Giving is live but not finished: the charity partner and the disbursement rail are
+// still being set up, so the screen says so rather than implying money has already
+// reached a charity.
+function BetaTag() {
+  return <span style={{ fontFamily:sans, fontSize:10, letterSpacing:"0.09em", textTransform:"uppercase", fontWeight:700, color:C.amberDark, background:C.amber+"22", border:`1px solid ${C.amber}55`, padding:"3px 8px", borderRadius:20 }}>Beta</span>;
 }
 function Card({ children }) {
   return <div style={{ background:C.card, border:`1px solid ${C.line}`, borderRadius:16, padding:20, marginTop:14 }}>{children}</div>;

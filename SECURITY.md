@@ -40,10 +40,37 @@ the engineering side.
 - **Least data on the client** — `/api/funnel` exposes only aggregate counts, never
   emails or PII; login failures are generic ("Wrong email or password").
 
-## Known gaps (honest, with severity and the fix)
+## The one that matters most: no 2FA
+
+**Not built. Deliberately deferred, not overlooked — and it is the largest remaining
+security gap in this product.**
+
+Everything else here hardens the edges. This is the middle. For an application that
+moves customer money, credential compromise is the realistic attack, not a clever
+exploit of the session layer — and today a password is the only thing in front of a
+customer's account and their withdrawal path. Rate limiting slows an online guessing
+attack; it does nothing against a password reused from a site that has already been
+breached.
+
+What partially compensates today, and why it isn't enough:
+- Withdrawals can only go to the customer's own established ACH relationship, so an
+  attacker cannot simply redirect funds to themselves.
+- The audit trail records the reset → bank-change → withdrawal sequence.
+
+Both are **detective**. They tell you it happened. Neither prevents it.
+
+**Recommended shape when it is built:** TOTP enrolment with recovery codes, required
+before the first withdrawal rather than at signup, so it does not add friction to the
+one step that has nothing to protect yet. Step-up re-authentication on bank-relationship
+changes and withdrawals.
+
+See [`compliance/AML.md`](compliance/AML.md) §6 — the AML program's monitoring rules
+assume the account belongs to who it claims to, which is an assumption 2FA is what
+actually backs.
+
+## Other known gaps (honest, with severity and the fix)
 | Gap | Severity | Fix |
 |---|---|---|
-| **No 2FA.** | Medium | Required before real money moves. TOTP enrolment + a recovery-code flow. |
 | **Rate limits are per-process, in memory** — they reset on restart and don't coordinate across instances. | Medium | Move the counters to Redis when the service runs on more than one instance. |
 | **Error monitoring is in-memory** — the buffer is lost on restart. | Low | Ship errors to Sentry/Datadog in production; the capture point already exists. |
 | **Signup reveals whether an email exists** (409). | Low | Login no longer leaks it (constant-time miss), but signup still does. Switch to a neutral "check your email" response if this matters more than the UX cost. |
@@ -73,3 +100,10 @@ Real money is gated by paperwork, not by missing code: Alpaca production approva
 the RIA question, and a written CIP/AML program. The application now collects and
 transmits real CIP data rather than synthetic placeholders, so what stands between
 this and live money is the approval process — see `GO-LIVE.md`.
+
+## Compliance documents
+- [`compliance/CIP.md`](compliance/CIP.md) — Customer Identification Program
+- [`compliance/AML.md`](compliance/AML.md) — Anti-Money Laundering program
+
+Both are engineering drafts describing what the software actually does. They require
+review and adoption by counsel before launch.
