@@ -3,7 +3,7 @@ import { usePlaidLink } from "react-plaid-link";
 import { AreaChart, Area, ResponsiveContainer, XAxis, Tooltip } from "recharts";
 import {
   Globe, Church, Moon, Heart, Sliders, ChevronRight, ChevronLeft,
-  Check, Shield, Coins, PiggyBank, Sparkles, TrendingUp, Scale,
+  Check, Shield, Coins, PiggyBank, TrendingUp, Scale,
   Wallet, Receipt, Info, Leaf, BookOpen, Users, HeartHandshake, Landmark, Bird,
 } from "lucide-react";
 
@@ -40,36 +40,71 @@ const C = {
 const serif = "'Manrope', system-ui, sans-serif";
 const sans  = "'Manrope', system-ui, sans-serif";
 
+// A CATALOGUE, NOT A SET OF MODEL PORTFOLIOS.
+//
+// Each entry is a category of funds that share a published screening approach. There
+// are deliberately no allocation percentages here, and no similarity or exclusion
+// scores: assigning weights or scoring securities is portfolio construction, and
+// portfolio construction on someone's behalf is investment advice. The user picks
+// which funds they want and sets their own percentages.
+//
+// `n` is the fund's own name and `screen` is a plain restatement of what the fund
+// family itself publishes about what it excludes — not our analysis of it.
 const FRAMEWORKS = {
-  broad:      { name: "Broad Ethical",     icon: Globe,         blurb: "Established ESG & ethically screened funds.",               holdings: [{ t:"ESGV",  n:"US ESG Equity",           a:45},{ t:"VSGX",  n:"Intl ESG Equity",         a:25},{ t:"EAGG",  n:"ESG Aggregate Bond",      a:20},{ t:"SUSA",  n:"MSCI USA ESG Select",     a:10}], sim:97.1, excl:214, tithe:2,    faith:false },
-  climate:    { name: "Climate Conscious", icon: Leaf,          blurb: "Fossil-fuel-free, low-carbon, clean energy funds.",          holdings: [{ t:"ICLN",  n:"iShares Global Clean Energy",a:35},{ t:"VEGN",  n:"US Vegan Climate ETF",    a:25},{ t:"CRBN",  n:"MSCI Low Carbon Target",  a:25},{ t:"EAGG",  n:"ESG Aggregate Bond",      a:15}], sim:94.8, excl:287, tithe:2,    faith:false },
-  humanrights:{ name: "Human Rights",      icon: Users,         blurb: "Screens for labor rights, equality & supply-chain ethics.", holdings: [{ t:"ESGV",  n:"US ESG Equity",           a:40},{ t:"VSGX",  n:"Intl ESG Equity",         a:28},{ t:"JUST",  n:"JUST US Large Cap",       a:17},{ t:"EAGG",  n:"ESG Aggregate Bond",      a:15}], sim:96.2, excl:243, tithe:2,    faith:false },
-  animal:     { name: "Animal Welfare",    icon: Bird,          blurb: "Excludes factory farming, animal testing & fur trade.",      holdings: [{ t:"VEGN",  n:"US Vegan Climate ETF",    a:50},{ t:"ESGV",  n:"US ESG Equity",           a:25},{ t:"VSGX",  n:"Intl ESG Equity",         a:15},{ t:"EAGG",  n:"ESG Aggregate Bond",      a:10}], sim:93.6, excl:331, tithe:2,    faith:false },
-  christian:  { name: "Christian Values",  icon: Church,        blurb: "Biblically & Catholic-screened funds. Tithing tradition.",   holdings: [{ t:"BIBL",  n:"Inspire 100 ETF",         a:40},{ t:"PRAY",  n:"FIS Biblical Responsible", a:25},{ t:"FCATX", n:"Catholic Values Equity",  a:20},{ t:"FBND",  n:"Core Bond",               a:15}], sim:95.8, excl:268, tithe:10,   faith:true  },
-  jewish:     { name: "Jewish Values",     icon: StarOfDavid,   blurb: "Tzedek-aligned screens; tzedakah giving.",                 holdings: [{ t:"ESGV",  n:"US ESG Equity",           a:42},{ t:"VSGX",  n:"Intl ESG Equity",         a:23},{ t:"EAGG",  n:"ESG Aggregate Bond",      a:20},{ t:"SUSB",  n:"Short-Term ESG Bond",     a:15}], sim:96.4, excl:231, tithe:10,   faith:true  },
-  islamic:    { name: "Islamic / Sharia",  icon: Moon,          blurb: "Sharia-compliant, interest-free. Zakat at 2.5%.",           holdings: [{ t:"SPUS",  n:"SP Funds S&P 500 Sharia", a:50},{ t:"HLAL",  n:"Wahed FTSE USA Sharia",   a:30},{ t:"SPSK",  n:"Dow Jones Sukuk",         a:20}],                                                                                                                   sim:93.2, excl:312, tithe:2.5,  faith:true  },
+  broad: { name: "Broad Ethical", icon: Globe, blurb: "Established ESG & ethically screened funds.", tithe: 2, faith: false,
+    holdings: [
+      { t:"ESGV", n:"Vanguard ESG U.S. Stock ETF",      screen:"Excludes fossil fuels, tobacco, weapons, gambling, adult entertainment." },
+      { t:"VSGX", n:"Vanguard ESG International Stock", screen:"Same exclusions, non-US developed and emerging markets." },
+      { t:"EAGG", n:"iShares ESG Aware US Aggregate Bond", screen:"Bonds from issuers with higher MSCI ESG ratings." },
+      { t:"SUSA", n:"iShares MSCI USA ESG Select",      screen:"US companies with favourable MSCI ESG ratings." },
+    ] },
+  climate: { name: "Climate Conscious", icon: Leaf, blurb: "Fossil-fuel-free, low-carbon, clean energy funds.", tithe: 2, faith: false,
+    holdings: [
+      { t:"ICLN", n:"iShares Global Clean Energy",  screen:"Clean-energy producers and equipment makers." },
+      { t:"VEGN", n:"US Vegan Climate ETF",         screen:"Excludes fossil fuels, animal exploitation, weapons, tobacco." },
+      { t:"CRBN", n:"iShares MSCI ACWI Low Carbon Target", screen:"Tilts toward lower carbon-intensity companies." },
+      { t:"EAGG", n:"iShares ESG Aware US Aggregate Bond", screen:"Bonds from issuers with higher MSCI ESG ratings." },
+    ] },
+  humanrights: { name: "Human Rights", icon: Users, blurb: "Screens for labor rights, equality & supply-chain ethics.", tithe: 2, faith: false,
+    holdings: [
+      { t:"ESGV", n:"Vanguard ESG U.S. Stock ETF",  screen:"Excludes fossil fuels, tobacco, weapons, gambling, adult entertainment." },
+      { t:"VSGX", n:"Vanguard ESG International Stock", screen:"Same exclusions, non-US developed and emerging markets." },
+      { t:"JUST", n:"Goldman Sachs JUST U.S. Large Cap", screen:"Weighted by JUST Capital's stakeholder rankings." },
+      { t:"EAGG", n:"iShares ESG Aware US Aggregate Bond", screen:"Bonds from issuers with higher MSCI ESG ratings." },
+    ] },
+  animal: { name: "Animal Welfare", icon: Bird, blurb: "Excludes factory farming, animal testing & fur trade.", tithe: 2, faith: false,
+    holdings: [
+      { t:"VEGN", n:"US Vegan Climate ETF",         screen:"Excludes animal exploitation, fossil fuels, weapons, tobacco." },
+      { t:"ESGV", n:"Vanguard ESG U.S. Stock ETF",  screen:"Excludes fossil fuels, tobacco, weapons, gambling, adult entertainment." },
+      { t:"VSGX", n:"Vanguard ESG International Stock", screen:"Same exclusions, non-US developed and emerging markets." },
+      { t:"EAGG", n:"iShares ESG Aware US Aggregate Bond", screen:"Bonds from issuers with higher MSCI ESG ratings." },
+    ] },
+  christian: { name: "Christian Values", icon: Church, blurb: "Biblically & Catholic-screened funds. Tithing tradition.", tithe: 10, faith: true,
+    holdings: [
+      { t:"BIBL", n:"Inspire 100 ETF",              screen:"Inspire's biblically responsible screening criteria." },
+      { t:"PRAY", n:"FIS Biblically Responsible Risk Managed", screen:"Biblically responsible screening." },
+      { t:"FCATX", n:"Catholic Values Equity",      screen:"USCCB socially responsible investment guidelines." },
+      { t:"FBND", n:"Fidelity Total Bond ETF",      screen:"Broad bond exposure." },
+    ] },
+  jewish: { name: "Jewish Values", icon: StarOfDavid, blurb: "Tzedek-aligned screens; tzedakah giving.", tithe: 10, faith: true,
+    holdings: [
+      { t:"ESGV", n:"Vanguard ESG U.S. Stock ETF",  screen:"Excludes fossil fuels, tobacco, weapons, gambling, adult entertainment." },
+      { t:"VSGX", n:"Vanguard ESG International Stock", screen:"Same exclusions, non-US developed and emerging markets." },
+      { t:"EAGG", n:"iShares ESG Aware US Aggregate Bond", screen:"Bonds from issuers with higher MSCI ESG ratings." },
+      { t:"SUSB", n:"iShares ESG Aware 1-5 Year USD Corporate Bond", screen:"Short-term corporate bonds, ESG-screened." },
+    ] },
+  islamic: { name: "Islamic / Sharia", icon: Moon, blurb: "Sharia-compliant, interest-free. Zakat at 2.5%.", tithe: 2.5, faith: true,
+    holdings: [
+      { t:"SPUS", n:"SP Funds S&P 500 Sharia Industry Exclusions", screen:"AAOIFI Sharia screening; excludes interest-based finance." },
+      { t:"HLAL", n:"Wahed FTSE USA Shariah",       screen:"FTSE Shariah screening methodology." },
+      { t:"SPSK", n:"SP Funds Dow Jones Global Sukuk", screen:"Sukuk — Sharia-compliant fixed income." },
+    ] },
 };
 
 const FW_GROUPS = [
   { label: "Values-based",    keys: ["broad","climate","humanrights","animal"] },
   { label: "Faith traditions",keys: ["christian","jewish","islamic"] },
 ];
-
-const SCREEN_EXCLUDES = {
-  broad:       { light:["Tobacco","Weapons","Adult content"],                            moderate:["Gambling","Predatory lending","Private prisons"],              strong:["Fossil fuels","Exploitative labor","Severe env. harm"] },
-  climate:     { light:["Coal","Tar sands","Arctic drilling"],                           moderate:["Oil & gas producers","Petrochemicals","Gas utilities"],        strong:["All fossil fuels","High-carbon aviation","Cement & steel"] },
-  humanrights: { light:["Forced labor supply chains","Cluster munitions","Torture tech"],moderate:["Sweatshop apparel","Surveillance exports","Private prisons"],  strong:["Authoritarian-linked firms","Land grabbing","Migrant exploitation"] },
-  animal:      { light:["Factory farming","Fur & exotic leather","Animal testing"],      moderate:["Industrial fishing","Trophy hunting","Foie gras producers"],   strong:["All animal agriculture","Zoos & captive breeding","Animal entertainment"] },
-  christian:   { light:["Abortion providers","Adult content","Weapons"],                 moderate:["Gambling","Alcohol","Tobacco"],                                strong:["Contraceptives","Embryonic research","Predatory lending"] },
-  jewish:      { light:["Weapons to hostile states","Adult content","Tobacco"],          moderate:["Gambling","Predatory lending","Non-kosher food corps"],        strong:["Settlements-linked firms","Discriminatory employers","Exploitative lending"] },
-  islamic:     { light:["Alcohol","Pork products","Adult content"],                      moderate:["Interest-bearing banks","Gambling","Tobacco"],                 strong:["All conventional finance","Weapons","Speculative derivatives"] },
-};
-
-const SCREENS = {
-  light:    { label:"Light",    reduction:78, simHit:0,   divHit:0, exclAdd:0  },
-  moderate: { label:"Moderate", reduction:88, simHit:0.6, divHit:2, exclAdd:42 },
-  strong:   { label:"Strong",   reduction:94, simHit:1.4, divHit:5, exclAdd:96 },
-};
 
 const OFFSET_BASIS = {
   gains:    { label:"Investment gains",           base:1180 },
@@ -182,7 +217,9 @@ export default function GoodSteward() {
   const [stage, setStage]               = useState("welcome");
   const [step, setStep]                 = useState(0);
   const [frameworks, setFrameworks]     = useState(["broad"]);
-  const [screen, setScreen]             = useState("moderate");
+  // The user's own allocation, keyed by ticker. Empty until they set it — we never
+  // supply a starting split, because a pre-filled allocation is a recommendation.
+  const [alloc, setAlloc]               = useState({});
   const [basis, setBasis]               = useState("gains");
   const [pct, setPct]                   = useState(2);
   const [tab, setTab]                   = useState("home");
@@ -280,7 +317,6 @@ export default function GoodSteward() {
 
   const framework = frameworks[0];
   const fw = FRAMEWORKS[framework];
-  const sc = SCREENS[screen];
 
   // Drive the stage from auth: signed out → welcome; signed in without a profile →
   // onboarding; fully set up → the app.
@@ -302,7 +338,7 @@ export default function GoodSteward() {
           // Stamp when the agreement was accepted; the server pairs it with the
           // request's IP as the signed-agreement record on the application.
           profile: { ...profile, agreementsAcceptedAt: new Date().toISOString() },
-          config: { framework: fw.name, holdings: fw.holdings.map(h => ({ symbol: h.t, a: h.a })), tithePct: pct, contribution, screen },
+          config: { framework: fw.name, holdings: chosenHoldings, tithePct: pct, contribution },
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -408,34 +444,40 @@ export default function GoodSteward() {
   };
 
   const derived = useMemo(() => {
-    const avgExcl      = Math.round(frameworks.reduce((s,k) => s + FRAMEWORKS[k].excl, 0) / frameworks.length) + sc.exclAdd;
-    const avgSim       = +(frameworks.reduce((s,k) => s + FRAMEWORKS[k].sim, 0) / frameworks.length - sc.simHit).toFixed(1);
-    const hasFaith     = frameworks.some(k => FRAMEWORKS[k].faith);
+    const hasFaith       = frameworks.some(k => FRAMEWORKS[k].faith);
     const suggestedTithe = Math.max(...frameworks.map(k => FRAMEWORKS[k].tithe));
-    const reduction    = sc.reduction;
-    const residual     = 100 - reduction;
     const annualDonation = (OFFSET_BASIS[basis].base * pct) / 100;
-    const harm         = Math.round((reduction / 100) * 40);
-    const diversification = Math.max(0, 20 - sc.divHit + (avgSim > 96 ? 0 : -1));
-    const returns      = Math.round((avgSim / 100) * 20);
-    const redistribution = Math.min(20, Math.round(pct * 2));
-    const score        = Math.min(99, harm + diversification + returns + redistribution);
-    return { excluded:avgExcl, similarity:avgSim, reduction, residual, annualDonation, harm, diversification, returns, redistribution, score, hasFaith, suggestedTithe };
-  }, [frameworks, screen, basis, pct, sc]);
+    return { annualDonation, hasFaith, suggestedTithe };
+  }, [frameworks, basis, pct]);
+
+  // Every fund available across the categories the user picked, de-duplicated. This is
+  // the catalogue they choose from; we never pre-select or rank within it.
+  const availableFunds = useMemo(() => {
+    const seen = new Map();
+    for (const k of frameworks) for (const h of FRAMEWORKS[k].holdings) if (!seen.has(h.t)) seen.set(h.t, h);
+    return [...seen.values()];
+  }, [frameworks]);
+
+  const allocTotal = Object.values(alloc).reduce((a, b) => a + (Number(b) || 0), 0);
+  const allocValid = allocTotal === 100;
+  // What actually gets sent to the broker: the user's own picks and percentages.
+  const chosenHoldings = Object.entries(alloc)
+    .filter(([, v]) => Number(v) > 0)
+    .map(([symbol, a]) => ({ symbol, a: Number(a) }));
 
   // Push the user's choices to the backend so round-ups actually buy the chosen
   // framework's ETFs and the tithe/contribution feed real numbers.
   useEffect(() => {
     if (stage !== "app") return;
+    if (!chosenHoldings.length) return;
     setConfig({
       framework: fw.name,
-      holdings: fw.holdings.map(h => ({ symbol: h.t, a: h.a })),
+      holdings: chosenHoldings,
       tithePct: pct,
       contribution,
-      screen,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, framework, screen, pct, contribution]);
+  }, [stage, framework, pct, contribution, allocTotal]);
 
   /* ── LOADING (auth check in flight) ── */
   if (user === undefined) return (
@@ -455,7 +497,7 @@ export default function GoodSteward() {
 
   /* ── ONBOARDING ── */
   if (stage === "onboard") {
-    const steps = [renderRisk, renderFramework, renderScreen, renderTithe, renderProfile];
+    const steps = [renderRisk, renderFramework, renderFunds, renderTithe, renderProfile];
     const last = steps.length - 1;
     const disclosuresAnswered = ["isControlPerson", "isAffiliatedExchangeOrFinra",
       "isPoliticallyExposed", "immediateFamilyExposed"].every((k) => typeof profile[k] === "boolean");
@@ -480,7 +522,11 @@ export default function GoodSteward() {
             </div>
           </div>
           <div style={{ padding:"12px 22px 24px", borderTop:`1px solid ${C.line}`, background:C.card }}>
-            <Btn onClick={() => step < last ? setStep(step+1) : (profileOk && !creating && openAccount())}>
+            <Btn onClick={() => {
+              if (step === 2 && !allocValid) return;      // fund picker must total 100%
+              if (step < last) return setStep(step + 1);
+              if (profileOk && !creating) openAccount();
+            }}>
               {creating ? "Opening account…" : step < last ? "Continue" : "Open my account"} <ChevronRight size={17} />
             </Btn>
           </div>
@@ -668,31 +714,63 @@ export default function GoodSteward() {
     );
   }
 
-  function renderScreen() {
+  // Step 3. The user picks which funds they hold and what share each gets. We show the
+  // fund's own published screening description and nothing else — no ranking, no score,
+  // no suggested split. Choosing for them is the thing that would make this advice.
+  function renderFunds() {
+    const setPct = (t, v) => {
+      const n = Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
+      setAlloc(a => { const next = { ...a }; if (n === 0) delete next[t]; else next[t] = n; return next; });
+    };
+    const split = () => {
+      // A convenience the user asks for by pressing it, not a default we applied.
+      const picked = Object.keys(alloc).filter(t => alloc[t] > 0);
+      const list = picked.length ? picked : availableFunds.map(f => f.t);
+      const base = Math.floor(100 / list.length);
+      const next = {};
+      list.forEach((t, i) => { next[t] = base + (i < 100 - base * list.length ? 1 : 0); });
+      setAlloc(next);
+    };
     return (
       <div>
-        <Kicker>Step 3 · The screen</Kicker>
-        <H2>How strict should the screen be?</H2>
-        <P>Stricter screens cut more harm, but drift slightly from the market. We show you the tradeoff honestly.</P>
-        <div style={{ marginTop:18, display:"grid", gap:10 }}>
-          {Object.entries(SCREENS).map(([k, v]) => {
-            const on = screen === k;
-            const fwKey = frameworks[0];
-            const ex = SCREEN_EXCLUDES[fwKey];
-            const chips = k === "light" ? ex.light : k === "moderate" ? [...ex.light,...ex.moderate] : [...ex.light,...ex.moderate,...ex.strong];
+        <Kicker>Step 3 · Your funds</Kicker>
+        <H2>Choose what you hold</H2>
+        <P>These are the funds available in the categories you picked. You decide which ones you want and how much of each. Percentages must add up to 100.</P>
+        <div style={{ marginTop:16, display:"grid", gap:10 }}>
+          {availableFunds.map(f => {
+            const v = alloc[f.t] ?? 0;
+            const on = v > 0;
             return (
-              <button key={k} onClick={() => setScreen(k)} style={{ ...rowCard, alignItems:"flex-start", flexDirection:"column", gap:8, borderColor:on?C.teal:C.line, borderWidth:1.5, background:on?C.tealTint:C.card }}>
-                <div style={{ display:"flex", width:"100%", alignItems:"center", justifyContent:"space-between" }}>
-                  <span style={{ fontFamily:serif, fontSize:16.5, color:C.ink, fontWeight:500 }}>{v.label}</span>
-                  {on && <Check size={17} color={C.pine} />}
+              <div key={f.t} style={{ border:`1.5px solid ${on ? C.teal : C.line}`, background:on ? C.tealTint : C.card, borderRadius:14, padding:"13px 14px" }}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontFamily:sans, fontSize:14, fontWeight:700, color:C.ink }}>{f.t}</div>
+                    <div style={{ fontFamily:sans, fontSize:12.5, color:C.muted, marginTop:1 }}>{f.n}</div>
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+                    <input type="number" min={0} max={100} value={v || ""} placeholder="0"
+                      onChange={e => setPct(f.t, e.target.value)}
+                      style={{ width:62, fontFamily:sans, fontSize:14, textAlign:"right", color:C.ink, background:C.bg, border:`1px solid ${C.line}`, borderRadius:9, padding:"8px 9px", outline:"none" }} />
+                    <span style={{ fontFamily:sans, fontSize:13, color:C.muted }}>%</span>
+                  </div>
                 </div>
-                <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-                  {chips.map(e => <span key={e} style={chip}>{e}</span>)}
-                </div>
-              </button>
+                <p style={{ fontFamily:sans, fontSize:11.5, color:C.faint, lineHeight:1.45, margin:"9px 0 0" }}>{f.screen}</p>
+              </div>
             );
           })}
         </div>
+        <div style={{ marginTop:14, display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+          <button onClick={split} style={{ background:"none", border:"none", padding:0, cursor:"pointer", fontFamily:sans, fontSize:12.5, color:C.brass, textDecoration:"underline" }}>
+            Split evenly
+          </button>
+          <span style={{ fontFamily:sans, fontSize:13, fontWeight:700, color: allocValid ? C.pine : C.muted }}>
+            {allocTotal}% of 100%
+          </span>
+        </div>
+        <p style={{ fontFamily:sans, fontSize:11.5, color:C.muted, lineHeight:1.5, marginTop:12 }}>
+          Steward doesn't recommend funds or set your allocation. The descriptions above are
+          each fund family's own published screening criteria. Read the prospectus before you invest.
+        </p>
       </div>
     );
   }
@@ -987,42 +1065,23 @@ export default function GoodSteward() {
           {live && <FlowStrip live={live} />}
 
           <Card>
-            <Row icon={Globe} label="Market tracking" right={<InfoTag>illustrative</InfoTag>} />
+            <Row icon={Globe} label="What you hold" />
             <p style={{ fontFamily:sans, fontSize:14, color:C.ink, lineHeight:1.5, margin:"8px 0 0" }}>
-              Your portfolio tracks the US market at <b style={{ color:C.pine }}>{derived.similarity}% similarity</b> while excluding <b style={{ color:C.pine }}>{derived.excluded} companies</b> that violate your {fw.name} · {SCREENS[screen].label} standard.
+              You chose these funds and set these percentages yourself. Steward doesn't
+              recommend funds, rank them, or rebalance on your behalf.
             </p>
-            {/* Honesty note: these two figures are modelled placeholders, not sourced from
-                fund holdings data. Steward's whole premise is refusing to overstate its own
-                purity — so we say so rather than quietly implying these are audited numbers. */}
-            <p style={{ fontFamily:sans, fontSize:11.5, color:C.faint, lineHeight:1.45, margin:"10px 0 0" }}>
-              Estimates modelled from published screens, not audited holdings. We model them from each
-              fund family's published screening categories (what they exclude and how strictly), scaled
-              by your chosen screen level, not computed from live holdings. Your actual holdings and
-              orders (below and in your statement) are real.
-            </p>
-          </Card>
-
-          <Card>
-            <Row icon={Scale} label="Exposure" right={<InfoTag>estimate</InfoTag>} />
-            <div style={{ marginTop:14 }}>
-              <ExposureGrid residue={derived.residual} screenedLabel="removed by your screen" residueLabel="the residue" />
+            <div style={{ marginTop:12, display:"grid", gap:9 }}>
+              {(fw.holdings || []).map(h => (
+                <div key={h.t} style={{ borderTop:`1px solid ${C.line}`, paddingTop:9 }}>
+                  <div style={{ fontFamily:sans, fontSize:13, fontWeight:700, color:C.ink }}>{h.t} <span style={{ fontWeight:500, color:C.muted }}>· {h.n}</span></div>
+                  <div style={{ fontFamily:sans, fontSize:11.5, color:C.faint, lineHeight:1.45, marginTop:2 }}>{h.screen}</div>
+                </div>
+              ))}
             </div>
-            <p style={{ fontFamily:sans, fontSize:12.5, color:C.muted, lineHeight:1.6, margin:"14px 0 0" }}>
-              {derived.residual} of every 100 holdings survive the screen. No portfolio is clean, so rather than
-              hide the part that isn't, we mark it, and the residue is what your giving, below, is for.
+            <p style={{ fontFamily:sans, fontSize:11.5, color:C.faint, lineHeight:1.45, margin:"12px 0 0" }}>
+              Descriptions are each fund family's own published screening criteria, not our
+              assessment. Read the prospectus before you invest.
             </p>
-          </Card>
-
-          <Card>
-            <Row icon={Sparkles} label="Stewardship score" right={
-              <span style={{ fontFamily:sans, fontSize:26, fontWeight:700, color:C.ink, letterSpacing:"-0.03em" }}>{derived.score}<span style={{ fontSize:14, color:C.muted, fontWeight:600 }}>/100</span></span>
-            } />
-            <div style={{ marginTop:8, display:"grid", gap:9 }}>
-              <ScoreBar label="Harm reduction"          v={derived.harm}           max={40} />
-              <ScoreBar label="Diversification"         v={derived.diversification} max={20} />
-              <ScoreBar label="Long-term returns"       v={derived.returns}        max={20} />
-              <ScoreBar label="Charitable redistribution" v={derived.redistribution} max={20} />
-            </div>
           </Card>
 
           <Card>
@@ -1046,12 +1105,12 @@ export default function GoodSteward() {
     const kpis = [
       { label:"Portfolio value", value: live ? live.display.portfolioValue : fmt(14820) },
       { label:"Invested",        value: live ? live.display.invested : fmt(12100) },
-      { label:"Market similarity", value: `${derived.similarity}%` },
+
       { label:"Given away",      value: live ? live.display.donated : fmt(240), accent:C.amber },
     ];
     return (
       <div>
-        <Header title="Holdings" sub={`${fw.name} · ${SCREENS[screen].label} screen`} />
+        <Header title="Holdings" sub={fw.name} />
         <div style={{ padding:"0 18px" }}>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
             {kpis.map(k => <KpiTile key={k.label} {...k} />)}
@@ -1079,20 +1138,6 @@ export default function GoodSteward() {
               })}
             </div>
             <p style={{ fontFamily:sans, fontSize:11, color:C.faint, lineHeight:1.5, margin:"10px 0 0" }}>Per-fund returns aren't broken out yet. Target and value are real.</p>
-          </Card>
-
-          <Card>
-            <Row icon={Shield} label="Screen strictness" />
-            <Segmented options={Object.entries(SCREENS).map(([k,v]) => ({ k, label:v.label }))} value={screen} onChange={setScreen} />
-            <Meter label="Direct exposure removed" value={derived.reduction} color={C.teal} style={{ marginTop:14 }} />
-          </Card>
-
-          <Card>
-            <Row icon={Scale} label="Exposure" right={<InfoTag>estimate</InfoTag>} />
-            <div style={{ marginTop:14 }}>
-              <ExposureGrid residue={derived.residual} screenedLabel="removed by your screen" residueLabel="the residue" />
-            </div>
-            <p style={{ fontFamily:sans, fontSize:11.5, color:C.faint, lineHeight:1.5, margin:"12px 0 0" }}>Estimates modelled from published screens, not audited holdings.</p>
           </Card>
 
           <Card>
@@ -1142,7 +1187,7 @@ export default function GoodSteward() {
             </div>
             <div style={{ fontFamily:sans, fontSize:13, color:"#8FB5AC", marginTop:2 }}>held back from your sweeps and given away</div>
             <div style={{ marginTop:16 }}>
-              <ExposureGrid cols={25} dark residue={derived.residual} screenedLabel="invested" residueLabel="given away" />
+              <ExposureGrid cols={25} dark residue={Math.round(pct)} screenedLabel="invested" residueLabel="given away" />
             </div>
           </div>
 
@@ -1255,7 +1300,7 @@ export default function GoodSteward() {
 
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginTop:14 }}>
             <TriTile label="Wealth" value={fmt2(closing)} sub="portfolio" />
-            <TriTile label="Impact" value={`${derived.reduction}%`} sub="harm removed" />
+            <TriTile label="Impact" value={`${pct}%`} sub="of each sweep given" />
             <TriTile label="Restoration" value={fmt2(given)} accent={C.amber} sub="given away" />
           </div>
 
@@ -1960,12 +2005,6 @@ function Card({ children }) {
 function Row({ icon: Icon, label, right }) {
   return <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}><div style={{ display:"flex", alignItems:"center", gap:9 }}><Icon size={16} color={C.teal} strokeWidth={1.9} /><span style={{ fontFamily:sans, fontSize:12, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, fontWeight:600 }}>{label}</span></div>{right}</div>;
 }
-function Meter({ label, value, color, caption, style }) {
-  return <div style={{ marginTop:12, ...style }}><div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}><span style={{ fontFamily:sans, fontSize:12.5, color:C.ink }}>{label}</span><span style={{ fontFamily:sans, fontSize:13, fontWeight:700, color }}>{value}%{caption&&<span style={{ fontWeight:400, color:C.muted, fontSize:11 }}> · {caption}</span>}</span></div><div style={{ height:7, background:C.line, borderRadius:6, marginTop:5, overflow:"hidden" }}><div style={{ width:`${value}%`, height:"100%", background:color, borderRadius:6, transition:"width .35s ease" }} /></div></div>;
-}
-function ScoreBar({ label, v, max }) {
-  return <div><div style={{ display:"flex", justifyContent:"space-between" }}><span style={{ fontFamily:sans, fontSize:12.5, color:C.ink }}>{label}</span><span style={{ fontFamily:sans, fontSize:12.5, color:C.muted }}>{v}/{max}</span></div><div style={{ height:6, background:C.line, borderRadius:6, marginTop:4, overflow:"hidden" }}><div style={{ width:`${(v/max)*100}%`, height:"100%", background:C.teal, borderRadius:6, transition:"width .35s ease" }} /></div></div>;
-}
 // The signature graphic: 100 cells, the last `residue` of them amber (the part the
 // screen can't reach, redirected to giving), the rest neutral. Always paired with a
 // two-item numeric legend. Light and dark (deep-green surface) variants.
@@ -2040,9 +2079,6 @@ function TriTile({ label, value, sub, accent }) {
   return <div style={{ background:C.bg, border:`1px solid ${C.line}`, borderRadius:12, padding:"14px 8px", textAlign:"center" }}><div style={{ fontFamily:sans, fontSize:10.5, color:C.muted, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em" }}>{label}</div><div style={{ fontFamily:sans, fontSize:18, fontWeight:700, color:accent ?? C.ink, marginTop:5, letterSpacing:"-0.03em" }}>{value}</div>{sub && <div style={{ fontFamily:sans, fontSize:10.5, color:C.faint, marginTop:2 }}>{sub}</div>}</div>;
 }
 // Segmented control: track with an active teal pill.
-function Segmented({ options, value, onChange }) {
-  return <div style={{ display:"flex", background:"#F3F1EB", borderRadius:11, padding:3, gap:3, marginTop:10 }}>{options.map(o => { const on = value === o.k; return <button key={o.k} onClick={() => onChange(o.k)} style={{ flex:1, border:"none", cursor:"pointer", borderRadius:9, padding:"9px 6px", background:on?C.teal:"transparent", color:on?"#fff":C.muted, fontFamily:sans, fontSize:13, fontWeight:on?700:600 }}>{o.label}</button>; })}</div>;
-}
 // Giving-over-time: short amber bars with month labels.
 function MiniBars({ data, color = C.amberChart }) {
   const max = Math.max(...data.map(d => d.v), 1);
