@@ -8,45 +8,58 @@ one lands in an inbox.
 
 ---
 
-## 1. Who to contact
+## 0. What RoundUp.org actually runs on
 
-Three tiers, and you should have live conversations in at least two of them. Never
-negotiate with one counterparty.
+Worth getting exactly right, because it changes who you call first. **Three parties, not
+two:**
 
-### Tier 1 — Built for exactly this
+| Party | What it is | Role |
+|---|---|---|
+| **RoundUp.org** | The consumer app. A company, not a charity. | Builds the product, links the card, charges via Stripe, keeps $2 per donation |
+| **[Change](https://getchange.io/)** (getchange.io) | Donation *infrastructure* vendor | Supplies the 1.3M pre-vetted nonprofit directory, the donation API, and the payout rails |
+| **[Our Change Foundation](https://ourchangefoundation.org/)** | Change's affiliated 501(c)(3) public charity and DAF | Receives every donation, issues receipts, regrants to the designated nonprofit |
 
-**[Ren / Renaissance Charitable Foundation](https://renaissancecharitable.org/)** — a
-501(c)(3) that has sponsored $10B+ in DAF assets, whose whole partner pitch is that you
-don't have to find or establish your own sponsoring organization. Ren is the operational
-platform behind DAF programs at major wealth firms. They do
-[white-label DAF partnerships](https://www.reninc.com/blog/white-label-donor-advised-fund-faqs/)
-as a product line.
+**RoundUp.org is a customer of Change.** They did not build the directory, the DAF, or the
+disbursement rails — they built a round-up app and plugged into someone else's charitable
+infrastructure. Change publishes a
+[FAQ for businesses](https://getchange.io/faq/business) and a
+[case study of the RoundUp.org integration](https://getchange.io/customer-stories/roundup).
 
-**American Endowment Foundation (AEF)** — independent national DAF sponsor, does turnkey
-partner programs.
-
-These two are the most likely to say yes, because partnering *is* their business model. Start
-here.
-
-### Tier 2 — Proven on this exact use case
-
-**Our Change Foundation** — the DAF behind RoundUp.org. They have already solved your
-problem in production. The only real question is whether they take other platforms or are
-effectively exclusive. Reach them through Change / RoundUp.org's partnerships contact. Even a
-no is useful: ask who else they'd point you to.
-
-### Tier 3 — API-first, lighter weight
-
-**[Goodstack](https://goodstack.io/)** (formerly Percent) — names in-app round-ups as a
-supported donation type; owns nonprofit vetting through disbursement.
-**[Every.org](https://docs.every.org/docs/intro)** — free APIs, 1M+ nonprofits, 501(c)(3).
-**[Daffy](https://www.daffy.org/)**, **[Endaoment](https://endaoment.org/)** — modern DAFs,
-low minimums, unconfirmed third-party API depth.
-
-Faster to integrate, but confirm they'll sign an **agency agreement** and not just hand you
-API keys. The paperwork is the point, not the API.
+**So the target isn't "a DAF sponsor" in the abstract. It's Change.** Our Change Foundation
+comes with it.
 
 ---
+
+## 1. Who to contact
+
+### Tier 1 — The stack RoundUp.org actually uses
+
+**[Change](https://getchange.io/)** — call them first. They sell this exact capability to
+businesses, the nonprofit directory and DAF come bundled, and there is a public case study of
+a round-up product built on it. If they say yes, most of Sprint 1 becomes an integration
+rather than a negotiation.
+
+### Tier 2 — Built for platform partnerships
+
+**[Ren / Renaissance Charitable Foundation](https://renaissancecharitable.org/)** — a
+501(c)(3) that has sponsored $10B+ in DAF assets, whose
+[white-label pitch](https://www.reninc.com/blog/white-label-donor-advised-fund-faqs/) is
+that you don't have to establish your own sponsoring organization.
+
+**American Endowment Foundation (AEF)** — independent national DAF sponsor, turnkey partner
+programs.
+
+Slower to integrate than Change (they're built for wealth platforms, not consumer apps), but
+they are in the business of saying yes to this.
+
+### Tier 3 — API-first alternatives
+
+**[Goodstack](https://goodstack.io/)** (formerly Percent) — names in-app round-ups as a
+supported donation type. **[Every.org](https://docs.every.org/docs/intro)** — free APIs,
+1M+ nonprofits. **[Daffy](https://www.daffy.org/)**, **[Endaoment](https://endaoment.org/)**.
+
+Confirm any of these will sign an **agency agreement**, not just issue API keys. The
+paperwork is the point.
 
 ## 2. The email
 
@@ -61,9 +74,9 @@ in diligence, and being caught inflating numbers ends the conversation.
 > everyday purchases round up to the next dollar, and the accrued total is charged once
 > monthly and directed to a nonprofit of the donor's choosing.
 >
-> We're looking for a 501(c)(3) DAF sponsor to receive those donations, issue tax receipts,
-> and disburse to recipient nonprofits — structurally similar to how RoundUp.org works with
-> Our Change Foundation.
+> We're looking for the charitable infrastructure to receive those donations, issue tax
+> receipts, and disburse to recipient nonprofits — structurally the same as your RoundUp.org
+> integration.
 >
 > Where we are: the round-up engine, bank-transaction integration, and donor accounts are
 > built and tested. We are pre-launch with no donors yet, and we're choosing a sponsor before
@@ -79,7 +92,7 @@ in diligence, and being caught inflating numbers ends the conversation.
 >
 > [name] · [entity] · [phone]
 
-**Send it to all three tiers on the same day.** Parallel, not sequential. Sequential
+**Send it to all three tiers on the same day**, Change first. Parallel, not sequential. Sequential
 outreach is how a six-week timeline becomes six months.
 
 ---
