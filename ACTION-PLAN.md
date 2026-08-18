@@ -165,25 +165,52 @@ credentials, but it is not a launch dependency and I would not start there.
 our own DAF sponsor, capturing the whole rail. Worth noting first: **RoundUp.org didn't do
 this.** They use a third-party foundation. That is a meaningful signal about the cost.
 
-To sponsor donor-advised funds, an entity must be a 501(c)(3) **public charity** (not a
-private foundation) that maintains DAFs. That means:
+**The timeline fork — this is the whole decision.** There are two forms, and which one
+Elevate can file depends entirely on whether it sponsors DAFs.
 
-- Form 1023 (full, not 1023-EZ) and an IRS determination letter — **typically 3–12 months**
-- Meeting a public support test, which is a real constraint on a brand-new organisation
-- DAF-specific excise rules: IRC §4966 (taxable distributions), §4967 (prohibited benefits),
-  §4958 (excess benefit transactions) — and DAF regulation has been under active IRS
-  attention, so this is a moving target
-- Form 990 with Schedule D for donor-advised funds
-- **State charitable solicitation registration in ~40 states — this becomes ours, not the
-  sponsor's**
-- An independent board, conflict-of-interest policy, grant due diligence on every recipient,
-  and fund accounting
+| | Form 1023-EZ | Form 1023 (full) |
+|---|---|---|
+| IRS processing | **80% within 22 days** | **80% within 191 days** (~6 months) |
+| Can sponsor DAFs? | **No** | Yes |
+| Gross receipts ceiling | ≤$50k/yr projected, ≤$250k assets | none |
 
-That is a real organisation to operate, not a filing.
+A sponsoring organization under §4966(d)(1) that maintains — or **intends to maintain** —
+donor-advised funds is [explicitly disqualified from Form 1023-EZ](https://www.irs.gov/instructions/i1023ez).
+So "501(c)(3) in about six weeks" is accurate for a plain charity on the EZ track, and
+simply unavailable if the plan is to sponsor DAFs. That path is the full 1023, and the IRS
+[publishes 191 days for 80% of determinations](https://www.irs.gov/charities-non-profits/charitable-organizations/wheres-my-application-for-tax-exempt-status).
+Simple merit-track cases can clear in ~90 days; complex ones run past a year.
+
+**A second trap on the fast track:** Form 1023-EZ caps projected gross receipts at $50k/yr.
+If donations are *received by* Elevate, they count toward that ceiling, and a round-up
+platform that works will blow through it quickly. The EZ track is only genuinely available
+if Elevate is not the entity receiving the donations.
+
+Beyond the form, a DAF sponsor also carries: the public support test, §4966/§4967/§4958
+excise rules, Form 990 Schedule D, state charitable solicitation registration in ~40 states,
+an independent board, and grant due diligence on every recipient.
+
+## The structural question nobody asked yet
+
+**Does Steward need to be a nonprofit at all?**
+
+RoundUp.org is a for-profit company. It retains $2 per donation. The charity — Our Change
+Foundation — is a separate organisation it partners with. The mission is served by where
+the money goes, not by the tax status of the company routing it.
+
+That means the cleanest structure is likely:
+
+- **The platform** (for-profit or nonprofit, your choice) operates the product and takes a
+  transparent fee.
+- **A third-party DAF sponsor** (Ren, AEF, Our Change Foundation) receives donations, issues
+  receipts, and disburses.
+- **Elevate Opportunity** becomes whatever is most useful — a recipient nonprofit, the
+  operating entity, or eventually a sponsor — without any of it blocking launch.
 
 **Recommendation: launch on a third-party sponsor, build Elevate Opportunity in parallel.**
 
-- We cannot wait 3–12 months for a determination letter to ship anything.
+- We cannot wait ~6 months for a full 1023 determination to ship anything, and the 22-day
+  EZ track is closed to DAF sponsors.
 - Even RoundUp.org, at scale, chose not to run their own.
 - Operating on someone else's rail first teaches us what the obligations actually are
   before we assume them.
